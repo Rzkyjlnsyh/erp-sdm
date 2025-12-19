@@ -1,0 +1,9 @@
+{
+  "name": "Sukses Digital Media - Enterprise ERP",
+  "description": "A comprehensive enterprise management system for Sukses Digital Media featuring role-based kanban boards, geo-fenced attendance with selfie validation, financial reporting (P&L, Balance Sheet), and Telegram integration.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
