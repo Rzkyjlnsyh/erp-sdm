@@ -16,7 +16,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',
   [UserRole.MANAGER]: 'Manager',
   [UserRole.FINANCE]: 'Finance Team',
-  [UserRole.STAFF]: 'Staff'
+  [UserRole.STAFF]: 'Staff',
+  [UserRole.SUPERADMIN]: 'Super Admin (Dev)'
 };
 
 export const FINANCIAL_ACCOUNTS: FinancialAccount[] = [

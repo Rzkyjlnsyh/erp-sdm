@@ -21,10 +21,12 @@ interface AppState {
   salaryConfigs: UserSalaryConfig[];
   payrollRecords: PayrollRecord[];
   settings: AppSettings;
+  realUser?: User | null; // For Superadmin Impersonation
 }
 
 const initialState: AppState = {
   currentUser: null,
+  realUser: null,
   authToken: undefined,
   users: [],
   projects: [],
@@ -429,6 +431,26 @@ export const useStore = () => {
     updateSalaryConfig,
     addPayrollRecord,
     resetDevice,
-    uploadFile
+    uploadFile,
+    impersonate: (role: UserRole) => {
+      const target = state.users.find(u => u.role === role);
+      if (target && state.currentUser?.role === UserRole.SUPERADMIN) {
+         setState(prev => ({ 
+           ...prev, 
+           realUser: prev.realUser || prev.currentUser, // Save real superadmin if not already saved
+           currentUser: target 
+         }));
+      }
+    },
+    stopImpersonation: () => {
+      if (state.realUser) {
+        setState(prev => ({ 
+           ...prev, 
+           currentUser: prev.realUser as User, // Explicitly cast to User
+           realUser: null
+        }));
+      }
+    },
+    realUser: state.realUser
   };
 };

