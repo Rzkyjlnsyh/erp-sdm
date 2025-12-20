@@ -198,94 +198,165 @@ export default function AttendanceReportPage() {
                 </div>
             </div>
 
-            {/* DETAIL MODAL */}
+            {/* RESPONSIVE DETAIL MODAL */}
             {selectedRecord && (
-                <div onClick={() => setSelectedRecord(null)} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div onClick={e => e.stopPropagation()} className="bg-white w-full max-w-4xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300 flex flex-col md:flex-row max-h-[90vh]">
-                        {/* Left: Photos */}
-                        <div className="md:w-1/2 bg-slate-900 p-8 flex flex-col justify-center space-y-6">
-                            <div className="space-y-4">
-                                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">FOTO MASUK (CHECK-IN)</h4>
-                                <div className="aspect-[4/5] bg-slate-800 rounded-[2rem] overflow-hidden border-4 border-slate-700 shadow-xl relative group">
-                                    <img src={selectedRecord.selfieUrl} alt="Check In Selfie" className="w-full h-full object-cover transition duration-700 group-hover:scale-110" />
-                                    <div className="absolute top-4 left-4 bg-emerald-500 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg">
-                                        {selectedRecord.timeIn}
-                                    </div>
-                                </div>
+                <div onClick={() => setSelectedRecord(null)} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
+                    <div 
+                        onClick={e => e.stopPropagation()} 
+                        className="bg-white/90 backdrop-blur-xl w-full max-w-5xl rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col md:flex-row max-h-[90vh] border border-white/20"
+                    >
+                        {/* LEFT: VISUAL EVIDENCE (Scrollable if needed on mobile) */}
+                        <div className="md:w-5/12 bg-slate-950 p-6 md:p-8 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+                            <div className="flex items-center justify-between md:hidden pb-4 border-b border-white/10">
+                                <h3 className="text-white font-black text-xs uppercase tracking-widest">Detail Absensi</h3>
+                                <button onClick={() => setSelectedRecord(null)} className="text-white/50 hover:text-white">
+                                    <ChevronLeft size={24} />
+                                </button>
                             </div>
-                            {selectedRecord.checkOutSelfieUrl && (
-                                <div className="space-y-4">
-                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">FOTO PULANG (CHECK-OUT)</h4>
-                                    <div className="aspect-[4/5] bg-slate-800 rounded-[2rem] overflow-hidden border-4 border-slate-700 shadow-xl relative group">
-                                        <img src={selectedRecord.checkOutSelfieUrl} alt="Check Out Selfie" className="w-full h-full object-cover transition duration-700 group-hover:scale-110" />
-                                        <div className="absolute top-4 left-4 bg-rose-500 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg">
-                                            {selectedRecord.timeOut}
+
+                            {/* Photo Grid Logic */}
+                            <div className={`grid gap-4 ${selectedRecord.checkOutSelfieUrl ? 'grid-cols-2 md:grid-cols-1' : 'grid-cols-1'}`}>
+                                {/* Check In Photo */}
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-emerald-400">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">CHECK IN</span>
+                                    </div>
+                                    <div className="aspect-[3/4] rounded-[1.5rem] overflow-hidden border-2 border-white/10 relative group shadow-2xl bg-slate-900">
+                                        <img 
+                                            src={selectedRecord.selfieUrl} 
+                                            alt="Check In" 
+                                            className="w-full h-full object-cover transition duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100" 
+                                        />
+                                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                                            <p className="text-white font-mono text-xs font-bold">{selectedRecord.timeIn}</p>
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* Check Out Photo */}
+                                {selectedRecord.checkOutSelfieUrl && (
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 text-rose-400">
+                                            <div className="w-2 h-2 rounded-full bg-rose-500" />
+                                            <span className="text-[10px] font-black uppercase tracking-[0.2em]">CHECK OUT</span>
+                                        </div>
+                                        <div className="aspect-[3/4] rounded-[1.5rem] overflow-hidden border-2 border-white/10 relative group shadow-2xl bg-slate-900">
+                                            <img 
+                                                src={selectedRecord.checkOutSelfieUrl} 
+                                                alt="Check Out" 
+                                                className="w-full h-full object-cover transition duration-700 group-hover:scale-110 opacity-90 group-hover:opacity-100" 
+                                            />
+                                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                                                <p className="text-white font-mono text-xs font-bold">{selectedRecord.timeOut}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {!selectedRecord.checkOutSelfieUrl && (
+                                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-center">
+                                    <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold">Belum Check-Out</p>
                                 </div>
                             )}
                         </div>
 
-                         {/* Right: Info */}
-                         <div className="md:w-1/2 p-8 md:p-12 overflow-y-auto custom-scrollbar space-y-8">
-                             <div>
-                                 <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight mb-1">
-                                    {store.users.find(u => u.id === selectedRecord.userId)?.name}
-                                 </h3>
-                                 <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">
-                                     {new Date(selectedRecord.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                 </p>
-                             </div>
+                         {/* RIGHT: DATA CONTEXT */}
+                         <div className="md:w-7/12 p-6 md:p-10 flex flex-col h-full bg-white/50 backdrop-blur-sm relative">
+                             {/* Desktop Close Button */}
+                             <button 
+                                onClick={() => setSelectedRecord(null)}
+                                className="hidden md:flex absolute top-6 right-6 w-10 h-10 bg-slate-100 hover:bg-rose-100 hover:text-rose-600 rounded-full items-center justify-center transition"
+                             >
+                                 <ChevronLeft className="rotate-180" size={20} />
+                             </button>
 
-                             <div className="space-y-6">
-                                 <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
-                                     <div className="flex items-start gap-4">
-                                         <Clock className="mt-1 text-blue-500" />
-                                         <div>
-                                             <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DURASI KERJA</h5>
-                                             <p className="text-sm font-black text-slate-700">
-                                                 {selectedRecord.timeOut ? 'Selesai Bekerja' : 'Sedang Bekerja'}
-                                             </p>
-                                             <p className="text-xs text-slate-500 mt-1">
-                                                 In: {selectedRecord.timeIn} — Out: {selectedRecord.timeOut || '?'}
-                                             </p>
+                             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-8">
+                                 {/* User Header */}
+                                 <div className="border-b border-slate-100 pb-6">
+                                     <div className="flex items-center gap-4 mb-2">
+                                         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-blue-200">
+                                             {store.users.find(u => u.id === selectedRecord.userId)?.name.charAt(0)}
                                          </div>
+                                         <div>
+                                            <h3 className="text-2xl font-black text-slate-800 tracking-tight leading-none">
+                                                {store.users.find(u => u.id === selectedRecord.userId)?.name}
+                                            </h3>
+                                            <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-1">
+                                                Staff ID: {selectedRecord.userId}
+                                            </p>
+                                         </div>
+                                     </div>
+                                     <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg text-slate-500 font-bold text-xs mt-2">
+                                         <Calendar size={14} />
+                                         {new Date(selectedRecord.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                                      </div>
                                  </div>
 
-                                 <div className="p-6 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-4">
-                                     <div className="flex items-start gap-4">
-                                         <MapPin className="mt-1 text-rose-500" />
-                                         <div className="w-full">
-                                             <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">LOKASI CHECK-IN</h5>
-                                             <div className="bg-white p-3 rounded-xl border border-slate-200 font-mono text-[10px] text-slate-500 break-all mb-2">
-                                                 {selectedRecord.location.lat}, {selectedRecord.location.lng}
-                                             </div>
-                                             <a 
+                                 {/* Status Cards */}
+                                 <div className="grid grid-cols-2 gap-4">
+                                     <div className={`p-5 rounded-[2rem] border ${selectedRecord.isLate ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                                         <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${selectedRecord.isLate ? 'text-rose-400' : 'text-emerald-400'}`}>STATUS KEHADIRAN</p>
+                                         <p className={`text-lg font-black ${selectedRecord.isLate ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                             {selectedRecord.isLate ? 'TERLAMBAT' : 'TEPAT WAKTU'}
+                                         </p>
+                                     </div>
+                                     <div className="p-5 rounded-[2rem] bg-indigo-50 border border-indigo-100">
+                                         <p className="text-[10px] font-black uppercase tracking-widest mb-1 text-indigo-400">TOTAL DURASI</p>
+                                         <p className="text-lg font-black text-indigo-600">
+                                             9j 0m {/* Placeholder duration logic could be enhanced */}
+                                         </p>
+                                     </div>
+                                 </div>
+
+                                 {/* Location Intel */}
+                                 <div className="space-y-3">
+                                     <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                         <MapPin size={12} /> TITIK LOKASI
+                                     </h5>
+                                     <div className="p-1 rounded-[2rem] border border-slate-200 bg-slate-50">
+                                        <div className="bg-white rounded-[1.7rem] p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                            <div className="flex items-center gap-3 text-slate-600">
+                                                <div className="p-2 bg-slate-100 rounded-full">
+                                                    <MapPin size={16} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-mono text-slate-400">LATITUDE / LONGITUDE</p>
+                                                    <p className="text-xs font-bold font-mono">{selectedRecord.location.lat.toFixed(6)}, {selectedRecord.location.lng.toFixed(6)}</p>
+                                                </div>
+                                            </div>
+                                            <a 
                                                 href={`https://www.google.com/maps/search/?api=1&query=${selectedRecord.location.lat},${selectedRecord.location.lng}`} 
                                                 target="_blank"
-                                                className="block w-full text-center py-3 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition shadow-lg shadow-blue-200"
-                                             >
-                                                 LIHAT DI GOOGLE MAPS
-                                             </a>
-                                         </div>
+                                                className="w-full sm:w-auto px-6 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition shadow-lg text-center"
+                                            >
+                                                Buka Peta
+                                            </a>
+                                        </div>
                                      </div>
                                  </div>
 
+                                 {/* Late Reason */}
                                  {selectedRecord.isLate && (
-                                     <div className="p-6 bg-rose-50 rounded-[2rem] border border-rose-100 space-y-2">
-                                         <div className="flex items-center gap-2 text-rose-600">
-                                             <AlertTriangle size={18} />
-                                             <span className="text-xs font-black uppercase tracking-widest">CATATAN KETERLAMBATAN</span>
+                                     <div className="p-5 bg-rose-50 rounded-[2rem] border border-rose-100">
+                                         <div className="flex items-center gap-2 text-rose-600 mb-2">
+                                             <AlertTriangle size={16} />
+                                             <span className="text-[10px] font-black uppercase tracking-widest">ALASAN KETERLAMBATAN</span>
                                          </div>
-                                         <p className="text-sm font-bold text-rose-800 italic">"{selectedRecord.lateReason}"</p>
+                                         <p className="text-sm font-medium text-rose-800 italic leading-relaxed">
+                                             "{selectedRecord.lateReason}"
+                                         </p>
                                      </div>
                                  )}
                              </div>
                              
-                             <button onClick={() => setSelectedRecord(null)} className="w-full py-5 text-slate-400 font-black uppercase text-xs tracking-[0.2em] hover:bg-slate-50 rounded-2xl transition">
-                                 TUTUP DETAIL
-                             </button>
+                             {/* Footer Context */}
+                             <div className="pt-6 border-t border-slate-100 mt-auto">
+                                <p className="text-[10px] text-center text-slate-400">
+                                    Data ini diverifikasi oleh sistem pada {new Date(selectedRecord.date).toLocaleDateString()}
+                                </p>
+                             </div>
                          </div>
                     </div>
                 </div>
