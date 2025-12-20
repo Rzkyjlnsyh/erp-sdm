@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { LoginScreen } from '@/components/LoginScreen';
-import { useStore } from '@/store';
+import { useAppStore } from '@/context/StoreContext';
 
 export default function LoginPage() {
-  const store = useStore();
+  const store = useAppStore();
   return <LoginScreen store={store} />;
 }
