@@ -136,22 +136,30 @@ export const UserManagement = ({ users, currentUser, onAddUser, onResetDevice, t
                      )}
                   </td>
                   <td className="px-6 py-5 text-right">
-                     {currentUser?.role === UserRole.OWNER && u.deviceId && (
-                        <button 
-                          onClick={async () => {
-                            if (confirm(`Reset kunci perangkat untuk user ${u.name}?`)) {
-                              try {
-                                await onResetDevice(u.id);
-                                toast.success("Device berhasil di-reset!");
-                              } catch (e) {
-                                toast.error("Gagal reset device.");
+                     {currentUser?.role === UserRole.OWNER ? (
+                        u.deviceId ? (
+                          <button 
+                            onClick={async () => {
+                              if (confirm(`Reset kunci perangkat untuk user ${u.name}?`)) {
+                                try {
+                                  await onResetDevice(u.id);
+                                  toast.success("Device berhasil di-reset!");
+                                } catch (e) {
+                                  toast.error("Gagal reset device.");
+                                }
                               }
-                            }
-                          }}
-                          className="text-[10px] font-black text-amber-600 hover:bg-amber-50 px-3 py-2 rounded-lg transition"
-                        >
-                          RESET ID
-                        </button>
+                            }}
+                            className="text-[9px] font-black text-white bg-amber-500 hover:bg-amber-600 px-4 py-2 rounded-xl transition shadow-lg shadow-amber-200"
+                          >
+                            RESET AKSES
+                          </button>
+                        ) : (
+                          <span className="text-[9px] font-black text-slate-300 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100 cursor-not-allowed">
+                            AKSES TERBUKA
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-slate-300">-</span>
                       )}
                   </td>
                 </tr>
