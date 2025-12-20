@@ -165,21 +165,31 @@ const initialState = {
 const useStore = ()=>{
     const [state, setState] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(initialState);
     const [loaded, setLoaded] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useState"])(false);
-    // Rehydrate current user from localStorage so session tetap hidup setelah refresh
+    // Combined hydration logic to prevent race conditions
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useEffect"])(()=>{
-        try {
-            const raw = ("TURBOPACK compile-time falsy", 0) ? "TURBOPACK unreachable" : null;
-            const rawToken = ("TURBOPACK compile-time falsy", 0) ? "TURBOPACK unreachable" : null;
-            if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
-            ;
-            if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
-            ;
-        } catch (e) {
-            console.error('Failed to read current user from localStorage:', e);
-        }
-    }, []);
-    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$ssr$2f$react$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["useEffect"])(()=>{
-        const bootstrap = async ()=>{
+        const hydrate = async ()=>{
+            // 1. Restore Session from LocalStorage
+            try {
+                const raw = ("TURBOPACK compile-time falsy", 0) ? "TURBOPACK unreachable" : null;
+                const rawToken = ("TURBOPACK compile-time falsy", 0) ? "TURBOPACK unreachable" : null;
+                let restoredUser = null;
+                let restoredToken = undefined;
+                if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+                ;
+                if (rawToken) {
+                    restoredToken = rawToken;
+                }
+                if (restoredUser) {
+                    setState((prev)=>({
+                            ...prev,
+                            currentUser: restoredUser,
+                            authToken: restoredToken
+                        }));
+                }
+            } catch (e) {
+                console.error('Failed to read current user from localStorage:', e);
+            }
+            // 2. Fetch Bootstrap Data from API
             try {
                 const res = await fetch(`${API_BASE}/api/bootstrap`);
                 if (!res.ok) throw new Error('Failed to load data from backend');
@@ -197,12 +207,13 @@ const useStore = ()=>{
                         settings: data.settings || prev.settings
                     }));
             } catch (e) {
-                console.error(e);
+                console.error('Bootstrap error', e);
             } finally{
+                // 3. Mark as Loaded ONLY after both steps are attempted
                 setLoaded(true);
             }
         };
-        bootstrap();
+        hydrate();
     }, []);
     const login = async (username, password)=>{
         try {

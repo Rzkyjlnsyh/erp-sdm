@@ -168,44 +168,42 @@ const useStore = ()=>{
     _s();
     const [state, setState] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(initialState);
     const [loaded, setLoaded] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
-    // Rehydrate current user from localStorage so session tetap hidup setelah refresh
+    // Combined hydration logic to prevent race conditions
     (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
         "useStore.useEffect": ()=>{
-            try {
-                const raw = ("TURBOPACK compile-time truthy", 1) ? window.localStorage.getItem(CURRENT_USER_KEY) : "TURBOPACK unreachable";
-                const rawToken = ("TURBOPACK compile-time truthy", 1) ? window.localStorage.getItem(CURRENT_TOKEN_KEY) : "TURBOPACK unreachable";
-                if (raw) {
-                    const user = JSON.parse(raw);
-                    setState({
-                        "useStore.useEffect": (prev)=>({
-                                ...prev,
-                                currentUser: user
-                            })
-                    }["useStore.useEffect"]);
-                }
-                if (rawToken) {
-                    setState({
-                        "useStore.useEffect": (prev)=>({
-                                ...prev,
-                                authToken: rawToken
-                            })
-                    }["useStore.useEffect"]);
-                }
-            } catch (e) {
-                console.error('Failed to read current user from localStorage:', e);
-            }
-        }
-    }["useStore.useEffect"], []);
-    (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useEffect"])({
-        "useStore.useEffect": ()=>{
-            const bootstrap = {
-                "useStore.useEffect.bootstrap": async ()=>{
+            const hydrate = {
+                "useStore.useEffect.hydrate": async ()=>{
+                    // 1. Restore Session from LocalStorage
+                    try {
+                        const raw = ("TURBOPACK compile-time truthy", 1) ? window.localStorage.getItem(CURRENT_USER_KEY) : "TURBOPACK unreachable";
+                        const rawToken = ("TURBOPACK compile-time truthy", 1) ? window.localStorage.getItem(CURRENT_TOKEN_KEY) : "TURBOPACK unreachable";
+                        let restoredUser = null;
+                        let restoredToken = undefined;
+                        if (raw) {
+                            restoredUser = JSON.parse(raw);
+                        }
+                        if (rawToken) {
+                            restoredToken = rawToken;
+                        }
+                        if (restoredUser) {
+                            setState({
+                                "useStore.useEffect.hydrate": (prev)=>({
+                                        ...prev,
+                                        currentUser: restoredUser,
+                                        authToken: restoredToken
+                                    })
+                            }["useStore.useEffect.hydrate"]);
+                        }
+                    } catch (e) {
+                        console.error('Failed to read current user from localStorage:', e);
+                    }
+                    // 2. Fetch Bootstrap Data from API
                     try {
                         const res = await fetch(`${API_BASE}/api/bootstrap`);
                         if (!res.ok) throw new Error('Failed to load data from backend');
                         const data = await res.json();
                         setState({
-                            "useStore.useEffect.bootstrap": (prev)=>({
+                            "useStore.useEffect.hydrate": (prev)=>({
                                     ...prev,
                                     users: data.users || [],
                                     projects: data.projects || [],
@@ -217,15 +215,16 @@ const useStore = ()=>{
                                     payrollRecords: data.payrollRecords || [],
                                     settings: data.settings || prev.settings
                                 })
-                        }["useStore.useEffect.bootstrap"]);
+                        }["useStore.useEffect.hydrate"]);
                     } catch (e) {
-                        console.error(e);
+                        console.error('Bootstrap error', e);
                     } finally{
+                        // 3. Mark as Loaded ONLY after both steps are attempted
                         setLoaded(true);
                     }
                 }
-            }["useStore.useEffect.bootstrap"];
-            bootstrap();
+            }["useStore.useEffect.hydrate"];
+            hydrate();
         }
     }["useStore.useEffect"], []);
     const login = async (username, password)=>{
@@ -642,7 +641,7 @@ const useStore = ()=>{
         uploadFile
     };
 };
-_s(useStore, "J7TdHD81Jpdt6jfloQr4E7tzaAo=");
+_s(useStore, "4T8T59hq/AjGs/YUtm09EoZ4U10=");
 if (typeof globalThis.$RefreshHelpers$ === 'object' && globalThis.$RefreshHelpers !== null) {
     __turbopack_context__.k.registerExports(__turbopack_context__.m, globalThis.$RefreshHelpers$);
 }
