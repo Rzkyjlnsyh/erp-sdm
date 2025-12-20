@@ -72,7 +72,7 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole, activeTab, onTabCha
           </button>
         </div>
         
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto sidebar-scrollbar">
           {visibleNav.map((item) => (
             <button
               key={item.id}
