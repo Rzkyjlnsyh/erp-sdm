@@ -3,7 +3,7 @@ import pool from '@/lib/db';
 import bcrypt from 'bcryptjs';
 
 export const dynamic = 'force-dynamic';
-
+export const revalidate = 0;
 
 async function ensureSeedData() {
   const client = await pool.connect();

@@ -55,31 +55,41 @@ export const useStore = () => {
   const [state, setState] = useState<AppState>(initialState);
   const [loaded, setLoaded] = useState(false);
 
-  // Rehydrate current user from localStorage so session tetap hidup setelah refresh
+  // Combined Initialization Effect to prevent race conditions
   useEffect(() => {
-    try {
-      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(CURRENT_USER_KEY) : null;
-      const rawToken = typeof window !== 'undefined' ? window.localStorage.getItem(CURRENT_TOKEN_KEY) : null;
-      if (raw) {
-        const user: User = JSON.parse(raw);
-        setState(prev => ({ ...prev, currentUser: user }));
-      }
-      if (rawToken) {
-        setState(prev => ({ ...prev, authToken: rawToken as any }));
-      }
-    } catch (e) {
-      console.error('Failed to read current user from localStorage:', e);
-    }
-  }, []);
-
-  useEffect(() => {
-    const bootstrap = async () => {
+    const initializeApp = async () => {
+      // 1. Rehydrate Auth
+      let currentUser: User | null = null;
+      let token: string | undefined = undefined;
+      
       try {
-        const res = await fetch(`${API_BASE}/api/bootstrap`);
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem(CURRENT_USER_KEY) : null;
+        const rawToken = typeof window !== 'undefined' ? window.localStorage.getItem(CURRENT_TOKEN_KEY) : null;
+        if (raw) {
+          currentUser = JSON.parse(raw);
+        }
+        if (rawToken) {
+          token = rawToken;
+        }
+      } catch (e) {
+        console.error('Failed to read current user from localStorage:', e);
+      }
+
+      // Update state with rehydrated user immediately (before fetch to avoid UI flicker)
+      if (currentUser || token) {
+         setState(prev => ({ ...prev, currentUser, authToken: token }));
+      }
+
+      // 2. Bootstrap Data (only after auth is settled)
+      try {
+        const res = await fetch(`${API_BASE}/api/bootstrap`, { cache: 'no-store' }); // Ensure fresh data
         if (!res.ok) throw new Error('Failed to load data from backend');
         const data = await res.json();
+        
         setState(prev => ({
           ...prev,
+          // If local storage was empty but bootstrap implies session (unlikely in this architecture but safe to keep logic), 
+          // we stick to local storage auth as truth.
           users: data.users || [],
           projects: data.projects || [],
           attendance: data.attendance || [],
@@ -91,12 +101,13 @@ export const useStore = () => {
           settings: data.settings || prev.settings
         }));
       } catch (e) {
-        console.error(e);
+        console.error("Bootstrap error:", e);
       } finally {
         setLoaded(true);
       }
     };
-    bootstrap();
+
+    initializeApp();
   }, []);
 
   const login = async (username: string, password?: string): Promise<User | null> => {
