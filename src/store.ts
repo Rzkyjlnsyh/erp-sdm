@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { User, UserRole, Project, Attendance, LeaveRequest, Transaction, AppSettings, DailyReport, UserSalaryConfig, PayrollRecord } from './types';
+import { User, UserRole, Project, Attendance, LeaveRequest, Transaction, AppSettings, DailyReport, UserSalaryConfig, PayrollRecord, SystemLog, SystemActionType } from './types';
 import { INITIAL_OFFICE_LOCATION } from './constants';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -22,6 +22,7 @@ interface AppState {
   salaryConfigs: UserSalaryConfig[];
   payrollRecords: PayrollRecord[];
   settings: AppSettings;
+  logs: SystemLog[];
 }
 
 const initialState: AppState = {
@@ -36,6 +37,7 @@ const initialState: AppState = {
   dailyReports: [],
   salaryConfigs: [],
   payrollRecords: [],
+  logs: [],
   settings: {
     officeLocation: INITIAL_OFFICE_LOCATION,
     officeHours: { start: '08:00', end: '17:00' },
@@ -100,6 +102,7 @@ export const useStore = () => {
           dailyReports: data.dailyReports || [],
           salaryConfigs: data.salaryConfigs || [],
           payrollRecords: data.payrollRecords || [],
+          logs: data.logs || [],
           settings: data.settings || prev.settings
         }));
       } catch (e) {
@@ -112,9 +115,43 @@ export const useStore = () => {
     initializeApp();
   }, []);
 
+  const authHeaders: Record<string, string> = state.authToken
+    ? { Authorization: `Bearer ${state.authToken}` }
+    : {};
+
+  // --- CENTRALIZED LOGGING FUNCTION ---
+  const addLog = async (actionType: SystemActionType, details: string, target?: string, metadata?: any) => {
+    if (!state.currentUser) return;
+
+    const newLog: SystemLog = {
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: Date.now(),
+      actorId: state.currentUser.id,
+      actorName: state.currentUser.name,
+      actorRole: state.currentUser.role,
+      actionType,
+      details,
+      target,
+      metadata
+    };
+
+    // Optimistic Update
+    setState(prev => ({ ...prev, logs: [newLog, ...prev.logs] }));
+
+    // Async persist to backend (Fire & Forget)
+    try {
+      fetch(`${API_BASE}/api/system-logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(newLog)
+      });
+    } catch (e) {
+      console.error('Failed to persist log', e);
+    }
+  };
+
   const login = async (username: string, password?: string): Promise<User | null> => {
     try {
-      // Generate or retrieve Device ID
       let deviceId = typeof window !== 'undefined' ? window.localStorage.getItem('sdm_device_id') : null;
       if (!deviceId) {
          deviceId = Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -128,34 +165,48 @@ export const useStore = () => {
       });
       const payload = await res.json().catch(() => null);
       if (!res.ok) {
-        // Handle specific device lock error
         if (payload?.error === 'DEVICE_LOCKED_MISMATCH') {
           throw new Error('AKSES DITOLAK: Akun ini terkunci pada perangkat lain. Harap hubungi Owner untuk reset.');
         }
-        const msg = payload?.error || 'Login failed';
-        throw new Error(msg);
+        throw new Error(payload?.error || 'Login failed');
       }
       const user: User = payload.user;
       const token: string | undefined = payload.token;
+      
       setState(prev => ({ ...prev, currentUser: user, authToken: token as any }));
+      
+      // LOG LOGIN
+      try {
+        const loginLog: SystemLog = {
+            id: Math.random().toString(36).substr(2,9),
+            timestamp: Date.now(),
+            actorId: user.id,
+            actorName: user.name,
+            actorRole: user.role,
+            actionType: SystemActionType.AUTH_LOGIN,
+            details: 'User logged in successfully',
+            target: 'Session'
+        };
+        fetch(`${API_BASE}/api/system-logs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(loginLog)
+        });
+        setState(prev => ({ ...prev, logs: [loginLog, ...prev.logs] }));
+      } catch(e) {}
+
       try {
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-          if (token) {
-            window.localStorage.setItem(CURRENT_TOKEN_KEY, token);
-          }
+          if (token) window.localStorage.setItem(CURRENT_TOKEN_KEY, token);
         }
       } catch (e) {
         console.error('Failed to persist current user:', e);
       }
       return user;
     } catch (e) {
-      // Ensure state is cleared on failure to prevent UI glitches
       setState(prev => ({ ...prev, currentUser: null, authToken: undefined }));
-      console.error('Login error:', e);
-      if (e instanceof Error) {
-        throw e;
-      }
+      if (e instanceof Error) throw e;
       throw new Error('Tidak dapat terhubung ke server API.');
     }
   };
@@ -167,6 +218,8 @@ export const useStore = () => {
         headers: { 'Content-Type': 'application/json', ...authHeaders }
       });
       if (!res.ok) throw new Error('Failed to reset device');
+      
+      addLog(SystemActionType.AUTH_RESET_DEVICE, `Reset device ID for user ${userId}`, userId);
       return true;
     } catch (e) {
       console.error(e);
@@ -175,20 +228,15 @@ export const useStore = () => {
   };
 
   const logout = () => {
+    addLog(SystemActionType.AUTH_LOGOUT, 'User logged out', 'Session');
     try {
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(CURRENT_USER_KEY);
         window.localStorage.removeItem(CURRENT_TOKEN_KEY);
       }
-    } catch (e) {
-      console.error('Failed to clear current user from localStorage:', e);
-    }
+    } catch (e) {}
     setState(prev => ({ ...prev, currentUser: null, authToken: undefined as any }));
   };
-
-  const authHeaders: Record<string, string> = state.authToken
-    ? { Authorization: `Bearer ${state.authToken}` }
-    : {};
 
   const addUser = async (user: User) => {
     try {
@@ -200,6 +248,7 @@ export const useStore = () => {
       if (!res.ok) throw new Error('Failed to create user');
       const created: User = await res.json();
       setState(prev => ({ ...prev, users: [...prev.users, created] }));
+      addLog(SystemActionType.USER_CREATE, `Created new user: ${created.name}`, created.id);
     } catch (e) {
       console.error(e);
     }
@@ -221,6 +270,7 @@ export const useStore = () => {
       });
       if (!res.ok) throw new Error('Failed to update settings');
       setState(prev => ({ ...prev, settings: newSettings }));
+      addLog(SystemActionType.SETTINGS_UPDATE, 'Updated application settings', 'Settings');
     } catch (e) {
       console.error(e);
     }
@@ -236,6 +286,7 @@ export const useStore = () => {
       if (!res.ok) throw new Error('Failed to create project');
       const created: Project = await res.json();
       setState(prev => ({ ...prev, projects: [...prev.projects, created] }));
+      addLog(SystemActionType.PROJECT_CREATE, `Created project: ${created.title}`, created.id);
     } catch (e) {
       console.error(e);
     }
@@ -254,6 +305,7 @@ export const useStore = () => {
         ...prev,
         projects: prev.projects.map(p => p.id === updated.id ? updated : p)
       }));
+      addLog(SystemActionType.PROJECT_UPDATE, `Updated project: ${updated.title} (Status: ${updated.status})`, updated.id);
     } catch (e) {
       console.error(e);
     }
@@ -269,6 +321,7 @@ export const useStore = () => {
       if (!res.ok) throw new Error('Failed to create attendance');
       const created: Attendance = await res.json();
       setState(prev => ({ ...prev, attendance: [...prev.attendance, created] }));
+      addLog(SystemActionType.ATTENDANCE_CLOCK_IN, `Clock In at ${created.timeIn} ${created.isLate ? '(LATE)' : ''}`, created.id);
     } catch (e) {
       console.error(e);
     }
@@ -287,6 +340,9 @@ export const useStore = () => {
         ...prev,
         attendance: prev.attendance.map(a => a.id === updated.id ? updated : a)
       }));
+      if (updated.timeOut) {
+         addLog(SystemActionType.ATTENDANCE_CLOCK_OUT, `Clock Out at ${updated.timeOut}`, updated.id);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -302,6 +358,7 @@ export const useStore = () => {
       if (!res.ok) throw new Error('Failed to create request');
       const created: LeaveRequest = await res.json();
       setState(prev => ({ ...prev, requests: [...prev.requests, created] }));
+      addLog(SystemActionType.REQUEST_CREATE, `Submitted request: ${created.type}`, created.id);
     } catch (e) {
       console.error(e);
     }
@@ -320,6 +377,7 @@ export const useStore = () => {
         ...prev,
         requests: prev.requests.map(r => r.id === updated.id ? updated : r)
       }));
+      addLog(SystemActionType.REQUEST_APPROVE, `Request ${updated.status}: ${updated.type}`, updated.id);
     } catch (e) {
       console.error(e);
     }
@@ -335,6 +393,7 @@ export const useStore = () => {
       if (!res.ok) throw new Error('Failed to create transaction');
       const created: Transaction = await res.json();
       setState(prev => ({ ...prev, transactions: [...prev.transactions, created] }));
+      addLog(SystemActionType.FINANCE_CREATE, `Created transaction: ${created.amount} (${created.type})`, created.id);
     } catch (e) {
       console.error(e);
     }
@@ -350,6 +409,7 @@ export const useStore = () => {
       if (!res.ok) throw new Error('Failed to create daily report');
       const created: DailyReport = await res.json();
       setState(prev => ({ ...prev, dailyReports: [...prev.dailyReports, created] }));
+      addLog(SystemActionType.PROJECT_TASK_COMPLETE, `Submitted Daily Report for ${created.date}`, created.id);
     } catch (e) {
       console.error(e);
     }
@@ -374,6 +434,7 @@ export const useStore = () => {
         }
         return { ...prev, salaryConfigs: [...prev.salaryConfigs, updated] };
       });
+      addLog(SystemActionType.FINANCE_SALARY_CONFIG, `Updated salary config for user ${updated.userId}`, updated.userId);
     } catch (e) {
       console.error(e);
     }
@@ -389,6 +450,7 @@ export const useStore = () => {
       if (!res.ok) throw new Error('Failed to create payroll record');
       const created: PayrollRecord = await res.json();
       setState(prev => ({ ...prev, payrollRecords: [...prev.payrollRecords, created] }));
+      addLog(SystemActionType.FINANCE_PAYROLL_GENERATE, `Generated payroll for ${created.month}, User: ${created.userId}`, created.id);
     } catch (e) {
       console.error(e);
     }
@@ -398,7 +460,6 @@ export const useStore = () => {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      // Content-Type header excluded so browser sets boundary
       const res = await fetch(`${API_BASE}/api/upload`, {
         method: 'POST',
         headers: { ...authHeaders }, 
@@ -434,10 +495,7 @@ export const useStore = () => {
     uploadFile,
     impersonate: (role: UserRole) => {
       if (state.currentUser?.role === UserRole.SUPERADMIN || state.realUser) {
-        // If not already impersonating, save real user
         const real = state.realUser || state.currentUser;
-        
-        // Create mock user for role
         const mockUser: User = {
           id: `impersonated_${role.toLowerCase()}`,
           name: `[Preview] ${role}`,
@@ -447,7 +505,6 @@ export const useStore = () => {
           telegramUsername: 'preview',
           deviceId: 'preview_device'
         };
-
         setState(prev => ({
           ...prev,
           currentUser: mockUser,

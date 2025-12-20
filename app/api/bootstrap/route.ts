@@ -55,6 +55,21 @@ async function ensureSeedData() {
          [u.id, u.name, u.username, u.telegramId, u.telegramUsername, u.role, hash]
        );
     }
+
+    // Ensure system_logs table exists
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS system_logs (
+        id VARCHAR(50) PRIMARY KEY,
+        timestamp BIGINT NOT NULL,
+        actor_id VARCHAR(50),
+        actor_name VARCHAR(100),
+        actor_role VARCHAR(20),
+        action_type VARCHAR(50),
+        details TEXT,
+        target_obj VARCHAR(100),
+        metadata_json TEXT
+      )
+    `);
   } catch (e) {
     console.error("Seed Check Failed", e);
   } finally {
@@ -71,7 +86,7 @@ export async function GET() {
       const [
         usersRes, projectsRes, attendanceRes, requestsRes, 
         transactionsRes, dailyReportsRes, salaryConfigsRes, 
-        payrollRes, settingsRes
+        payrollRes, logsRes, settingsRes
       ] = await Promise.all([
         client.query('SELECT * FROM users'),
         client.query('SELECT * FROM projects'),
@@ -81,6 +96,7 @@ export async function GET() {
         client.query('SELECT * FROM daily_reports ORDER BY date DESC LIMIT 200'),
         client.query('SELECT * FROM salary_configs'),
         client.query('SELECT * FROM payroll_records ORDER BY processed_at DESC LIMIT 100'),
+        client.query('SELECT * FROM system_logs ORDER BY timestamp DESC LIMIT 1000'),
         client.query('SELECT * FROM settings LIMIT 1')
       ]);
 
@@ -177,6 +193,17 @@ export async function GET() {
           isSent: !!pr.is_sent,
           processedAt: Number(pr.processed_at),
           metadata: pr.metadata_json ? JSON.parse(pr.metadata_json) : undefined
+        })),
+        logs: logsRes.rows.map(l => ({
+          id: l.id,
+          timestamp: Number(l.timestamp),
+          actorId: l.actor_id,
+          actorName: l.actor_name,
+          actorRole: l.actor_role,
+          actionType: l.action_type,
+          details: l.details,
+          target: l.target_obj || undefined,
+          metadata: l.metadata_json ? JSON.parse(l.metadata_json) : undefined
         })),
         settings
       };

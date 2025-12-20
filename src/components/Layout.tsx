@@ -13,7 +13,8 @@ import {
   Clock,
   CreditCard,
   Menu,
-  X
+  X,
+  ShieldAlert
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -37,6 +38,7 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole, activeTab, onTabCha
     { id: 'daily-report', label: 'Daily Report', icon: Clock, roles: [UserRole.OWNER, UserRole.MANAGER, UserRole.FINANCE, UserRole.STAFF] },
     { id: 'finance', label: 'Arus Kas', icon: Wallet, roles: [UserRole.OWNER, UserRole.FINANCE] },
     { id: 'users', label: 'User Management', icon: Users, roles: [UserRole.OWNER, UserRole.MANAGER] },
+    { id: 'audit', label: 'Audit Trail', icon: ShieldAlert, roles: [UserRole.OWNER] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: [UserRole.OWNER] },
   ];
 
