@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+// @ts-ignore
 import { headers } from 'next/headers';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sdm_erp_dev_secret';
