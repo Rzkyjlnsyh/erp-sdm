@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const { pool } = require('./db.cjs');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
-// require('dotenv').config(); // Handled in db.cjs or Vercel Env
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -36,23 +36,6 @@ app.get('/', (req, res) => {
 
 // Utility helpers
 const uid = () => Math.random().toString(36).substr(2, 9);
-
-// DEBUG ENDPOINT
-app.get('/api/db-check', async (req, res) => {
-  try {
-    const client = await pool.connect();
-    const result = await client.query('SELECT NOW()');
-    client.release();
-    res.json({ status: 'ok', time: result.rows[0], env: process.env.NODE_ENV });
-  } catch (err) {
-    console.error("DB Check Failed:", err);
-    res.status(500).json({ 
-      status: 'error', 
-      message: err.message,
-      code: err.code
-    });
-  }
-});
 
 // Simple auth middleware
 function auth(requiredRoles) {
@@ -252,12 +235,8 @@ app.get('/api/bootstrap', async (req, res) => {
       client.release();
     }
   } catch (err) {
-    console.error("Bootstrap Error:", err);
-    res.status(500).json({ 
-      error: 'Failed to bootstrap data', 
-      message: err.message,
-      stack: process.env.NODE_ENV === 'production' ? 'hidden' : err.stack 
-    });
+    console.error(err);
+    res.status(500).json({ error: 'Failed to bootstrap data' });
   }
 });
 
