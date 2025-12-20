@@ -137,6 +137,8 @@ export const useStore = () => {
       }
       return user;
     } catch (e) {
+      // Ensure state is cleared on failure to prevent UI glitches
+      setState(prev => ({ ...prev, currentUser: null, authToken: undefined }));
       console.error('Login error:', e);
       if (e instanceof Error) {
         throw e;
