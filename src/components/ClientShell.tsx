@@ -6,7 +6,7 @@ import Layout from './Layout';
 import { useAppStore } from '../context/StoreContext';
 import { useToast } from './Toast';
 import { UserRole } from '../types';
-import { RoleSwitcher } from './RoleSwitcher';
+import { ReviewerWidget } from './ReviewerWidget';
 
 export default function ClientShell({ children }: { children: React.ReactNode }) {
   const store = useAppStore();
@@ -33,12 +33,8 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     // Redirect if role mismatch
     const userRoleSlug = store.currentUser.role.toLowerCase();
     // Only redirect if roleParam exists AND it doesn't match currentUser role
-    // Exception: If we are mimicking roles but the URL hasn't caught up, store wins.
-    if (roleParam && roleParam !== userRoleSlug && roleParam !== 'superadmin') {
-       // Wait, if I am impersonating, store.currentUser has the MIMIC ROLE.
-       // So userRoleSlug IS the mimic role.
-       // So if I am at /owner/dashboard but role is STAFF, redirect to /staff/dashboard
-       router.replace(`/${userRoleSlug}/kanban`);
+    if (roleParam && roleParam !== userRoleSlug) {
+      router.replace(`/${userRoleSlug}/kanban`);
     }
 
   }, [store.loaded, store.currentUser, roleParam, router, pathname]);
@@ -57,6 +53,7 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   const pathParts = pathname.split('/');
   const tabSlug = pathParts[2] || 'kanban';
   const activeTab = tabSlug; 
+  // Simplified logic, assuming tabSlug matches expected 'kanban', 'dashboard', etc.
 
   const handleTabChange = (tab: string) => {
     const userRoleSlug = store.currentUser!.role.toLowerCase();
@@ -78,8 +75,7 @@ export default function ClientShell({ children }: { children: React.ReactNode })
       >
         {children}
       </Layout>
-      <RoleSwitcher />
+      <ReviewerWidget store={store} />
     </>
   );
 }
-

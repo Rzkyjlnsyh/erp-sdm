@@ -34,7 +34,7 @@ async function ensureSeedData() {
           { id: '2', name: 'Siti Manager', username: 'manager', telegramId: '222', telegramUsername: '@siti_mgr', role: 'MANAGER', password: 'manager123' },
           { id: '3', name: 'Andi Finance', username: 'finance', telegramId: '333', telegramUsername: '@andi_fin', role: 'FINANCE', password: 'finance123' },
           { id: '4', name: 'Joko Staff', username: 'staff', telegramId: '444', telegramUsername: '@joko_sdm', role: 'STAFF', password: 'staff123' },
-          { id: '99', name: 'Super Developer', username: 'dev', telegramId: '000', telegramUsername: '@dev_ops', role: 'SUPERADMIN', password: 'dev' }
+          { id: '99', name: 'Super Dev', username: 'superadmin', telegramId: '000', telegramUsername: '@super_dev', role: 'SUPERADMIN', password: 'dev' }
        ];
        for (const u of defaultUsers) {
           const hash = await bcrypt.hash(u.password, 10);
@@ -43,6 +43,17 @@ async function ensureSeedData() {
             [u.id, u.name, u.username, u.telegramId, u.telegramUsername, u.role, hash]
           );
        }
+    }
+    
+    // Ensure Superadmin exists independently of other users
+    const resSuper = await client.query("SELECT id FROM users WHERE role = 'SUPERADMIN' LIMIT 1");
+    if (resSuper.rows.length === 0) {
+       const u = { id: '99', name: 'Super Dev', username: 'superadmin', telegramId: '000', telegramUsername: '@super_dev', role: 'SUPERADMIN', password: 'dev' };
+       const hash = await bcrypt.hash(u.password, 10);
+       await client.query(
+         'INSERT INTO users (id, name, username, telegram_id, telegram_username, role, password_hash) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+         [u.id, u.name, u.username, u.telegramId, u.telegramUsername, u.role, hash]
+       );
     }
   } catch (e) {
     console.error("Seed Check Failed", e);

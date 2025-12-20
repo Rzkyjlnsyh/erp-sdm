@@ -9,7 +9,7 @@ export interface AuthPayload {
 }
 
 export async function getUser(): Promise<AuthPayload | null> {
-  const headersList = await headers();
+  const headersList = headers();
   const token = headersList.get('authorization')?.split(' ')[1];
 
   if (!token) return null;
@@ -27,7 +27,7 @@ export async function authorize(allowedRoles?: string[]) {
   if (!user) {
     throw new Error('Unauthorized');
   }
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && !allowedRoles.includes(user.role) && user.role !== 'SUPERADMIN') {
     throw new Error('Forbidden');
   }
   return user;

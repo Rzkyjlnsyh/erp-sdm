@@ -11,6 +11,7 @@ const CURRENT_TOKEN_KEY = 'sdm_erp_auth_token';
 
 interface AppState {
   currentUser: User | null;
+  realUser?: User | null; // For Superadmin Impersonation
   authToken?: string;
   users: User[];
   projects: Project[];
@@ -21,7 +22,6 @@ interface AppState {
   salaryConfigs: UserSalaryConfig[];
   payrollRecords: PayrollRecord[];
   settings: AppSettings;
-  realUser?: User | null; // For Superadmin Impersonation
 }
 
 const initialState: AppState = {
@@ -433,24 +433,36 @@ export const useStore = () => {
     resetDevice,
     uploadFile,
     impersonate: (role: UserRole) => {
-      const target = state.users.find(u => u.role === role);
-      if (target && state.currentUser?.role === UserRole.SUPERADMIN) {
-         setState(prev => ({ 
-           ...prev, 
-           realUser: prev.realUser || prev.currentUser, // Save real superadmin if not already saved
-           currentUser: target 
-         }));
+      if (state.currentUser?.role === UserRole.SUPERADMIN || state.realUser) {
+        // If not already impersonating, save real user
+        const real = state.realUser || state.currentUser;
+        
+        // Create mock user for role
+        const mockUser: User = {
+          id: `impersonated_${role.toLowerCase()}`,
+          name: `[Preview] ${role}`,
+          username: `preview_${role.toLowerCase()}`,
+          role: role,
+          telegramId: '000',
+          telegramUsername: 'preview',
+          deviceId: 'preview_device'
+        };
+
+        setState(prev => ({
+          ...prev,
+          currentUser: mockUser,
+          realUser: real
+        }));
       }
     },
     stopImpersonation: () => {
       if (state.realUser) {
-        setState(prev => ({ 
-           ...prev, 
-           currentUser: prev.realUser as User, // Explicitly cast to User
-           realUser: null
+        setState(prev => ({
+          ...prev,
+          currentUser: prev.realUser || null,
+          realUser: null
         }));
       }
-    },
-    realUser: state.realUser
+    }
   };
 };
