@@ -89,7 +89,8 @@ export async function GET() {
           username: u.username,
           telegramId: u.telegram_id || '',
           telegramUsername: u.telegram_username || '',
-          role: u.role
+          role: u.role,
+          deviceId: u.device_id || null
         })),
         projects: projectsRes.rows.map(p => ({
           id: p.id,
