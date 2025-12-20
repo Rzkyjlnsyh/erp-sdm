@@ -120,3 +120,5 @@ export const LoginScreen: React.FC<{ store: ReturnType<typeof useStore> }> = ({ 
     </div>
   );
 };
+
+// Re-trigger global build for Next.js 15+ type compatibility

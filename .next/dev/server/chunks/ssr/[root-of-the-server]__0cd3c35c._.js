@@ -305,7 +305,7 @@ const LoginScreen = ({ store })=>{
         lineNumber: 43,
         columnNumber: 5
     }, ("TURBOPACK compile-time value", void 0));
-};
+}; // Re-trigger global build for Next.js 15+ type compatibility
 }),
 "[project]/app/(auth)/login/page.tsx [app-ssr] (ecmascript)", ((__turbopack_context__) => {
 "use strict";

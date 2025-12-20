@@ -289,7 +289,7 @@ const LoginScreen = ({ store })=>{
         lineNumber: 43,
         columnNumber: 5
     }, ("TURBOPACK compile-time value", void 0));
-};
+}; // Re-trigger global build for Next.js 15+ type compatibility
 _s(LoginScreen, "ljUY2p5ruXomH+jJk3BbJ+yH3Bc=", false, function() {
     return [
         __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$navigation$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useRouter"],
