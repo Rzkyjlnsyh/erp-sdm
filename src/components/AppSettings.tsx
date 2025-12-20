@@ -14,6 +14,23 @@ export const AppSettings = ({ store, toast }: any) => {
   useEffect(() => {
     if (mapActive) {
       import('leaflet').then(L => {
+        // Ensure CSS is injected
+        if (!document.getElementById('leaflet-css')) {
+           const link = document.createElement('link');
+           link.id = 'leaflet-css';
+           link.rel = 'stylesheet';
+           link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+           document.head.appendChild(link);
+        }
+
+        // Fix Webpack icon issues
+        delete (L.Icon.Default.prototype as any)._getIconUrl;
+        L.Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+          iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+          shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        });
+
         const container = document.getElementById('map-picker');
         if (!container) return;
         if ((container as any)._leaflet_id) return;
@@ -207,7 +224,7 @@ export const AppSettings = ({ store, toast }: any) => {
             </button>
           ) : (
             <div className="space-y-6 animate-in slide-in-from-top-4 duration-500">
-              <div id="map-picker" className="shadow-2xl border-4 border-white"></div>
+              <div id="map-picker" className="h-[400px] w-full rounded-[2.5rem] shadow-2xl border-4 border-white z-0 overflow-hidden relative"></div>
               <div className="grid grid-cols-2 gap-4">
                  <div className="p-5 bg-slate-50 rounded-2xl text-center shadow-inner border border-slate-100"><p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">LATITUDE</p><p className="text-xs font-black text-slate-800">{officeLoc.lat.toFixed(6)}</p></div>
                  <div className="p-5 bg-slate-50 rounded-2xl text-center shadow-inner border border-slate-100"><p className="text-[9px] font-black uppercase text-slate-400 mb-1 tracking-widest">LONGITUDE</p><p className="text-xs font-black text-slate-800">{officeLoc.lng.toFixed(6)}</p></div>
