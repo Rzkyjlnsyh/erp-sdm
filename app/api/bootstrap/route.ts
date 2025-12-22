@@ -69,7 +69,50 @@ async function ensureSeedData() {
         target_obj VARCHAR(100),
         metadata_json TEXT
       )
+      )
     `);
+
+    // Ensure CHAT tables exist
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS chat_rooms (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(100),
+        type VARCHAR(20),
+        created_by VARCHAR(50),
+        created_at BIGINT
+      );
+      CREATE TABLE IF NOT EXISTS chat_members (
+        room_id VARCHAR(50),
+        user_id VARCHAR(50),
+        joined_at BIGINT,
+        PRIMARY KEY (room_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id VARCHAR(50) PRIMARY KEY,
+        room_id VARCHAR(50),
+        sender_id VARCHAR(50),
+        content TEXT,
+        attachment_url TEXT,
+        created_at BIGINT
+      );
+    `);
+
+    // Ensure Default 'General' Room
+    const resGeneral = await client.query("SELECT id FROM chat_rooms WHERE id = 'general'");
+    if (resGeneral.rows.length === 0) {
+      await client.query(
+        "INSERT INTO chat_rooms (id, name, type, created_by, created_at) VALUES ($1, $2, $3, $4, $5)",
+        ['general', 'General Forum', 'GROUP', 'system', Date.now()]
+      );
+      // Add all existing users to general
+      const allUsers = await client.query("SELECT id FROM users");
+      for (const u of allUsers.rows) {
+         await client.query(
+           "INSERT INTO chat_members (room_id, user_id, joined_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+           ['general', u.id, Date.now()]
+         );
+      }
+    }
   } catch (e) {
     console.error("Seed Check Failed", e);
   } finally {

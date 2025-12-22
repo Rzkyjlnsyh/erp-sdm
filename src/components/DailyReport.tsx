@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User, DailyReport, UserRole } from '../types';
 import { Plus, CheckCircle2, History, Link as LinkIcon, Image as ImageIcon, Send, Eye, X } from 'lucide-react';
 import { useToast } from './Toast';
+import { useAppStore } from '../context/StoreContext';
 
 interface DailyReportProps {
   currentUser: User;
@@ -12,12 +13,85 @@ interface DailyReportProps {
 }
 
 const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, reports, onAddReport, toast }) => {
+  const store = useAppStore(); // Access store for settings (Telegram Token)
   const [showAdd, setShowAdd] = useState(false);
   const [selectedReport, setSelectedReport] = useState<DailyReport | null>(null);
-  const [activities, setActivities] = useState([{ task: '', quantity: 1, link: '' }]);
+  const [activities, setActivities] = useState([{ task: '', quantity: 1, unit: '', link: '' }]);
 
-  const handleAddActivity = () => setActivities([...activities, { task: '', quantity: 1, link: '' }]);
+  const handleAddActivity = () => setActivities([...activities, { task: '', quantity: 1, unit: '', link: '' }]);
   const handleRemoveActivity = (idx: number) => setActivities(activities.filter((_, i) => i !== idx));
+
+  const sendTelegramReport = async (report: DailyReport) => {
+    const { telegramBotToken, telegramOwnerChatId, telegramGroupId } = store.settings;
+
+    // DEBUG: Check what values are actually loaded
+    console.log("DailyReport Tele Debug:", { 
+        hasToken: !!telegramBotToken, 
+        hasOwner: !!telegramOwnerChatId, 
+        hasGroup: !!telegramGroupId,
+        botTokenHint: telegramBotToken ? telegramBotToken.substring(0,5) + '...' : 'NONE'
+    });
+
+    if (!telegramBotToken) {
+       console.log("Telegram Bot Token is MISSING.");
+       toast.warning("Gagal kirim Telegram: Bot Token belum diisi di Settings.");
+       return;
+    }
+
+    if (!telegramOwnerChatId && !telegramGroupId) {
+       console.log("No destination (Owner/Group) set.");
+       toast.warning("Gagal kirim Telegram: Belum ada tujuan (ID Owner / ID Group) di Settings.");
+       return;
+    }
+
+    const activityList = report.activities
+      .map((a, i) => `${i + 1}. ${a.task} — *${a.quantity} ${a.unit || 'x'}* ${a.link ? '[Link]' : ''}`)
+      .join('\n');
+
+    const message = `
+📝 *LAPORAN HARIAN BARU*
+📅 *Tanggal:* ${new Date(report.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+👤 *Oleh:* ${currentUser.name} (@${currentUser.username})
+
+*Rincian Aktivitas:*
+${activityList}
+
+_Dikirim dari Sistem ERP SDM_
+    `.trim();
+
+    try {
+      const promises = [];
+
+      // Priority 1: Send to Group (Shared visibility)
+      if (telegramGroupId) {
+         promises.push(
+             fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: telegramGroupId, text: message, parse_mode: 'Markdown' })
+             })
+         );
+      }
+
+      // Priority 2: Send to Owner (Control)
+      // Only send to owner if explicitly set AND different from Group (to avoid double notif if Owner is testing in group)
+      if (telegramOwnerChatId && telegramOwnerChatId !== telegramGroupId) {
+         promises.push(
+             fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: telegramOwnerChatId, text: message, parse_mode: 'Markdown' })
+             })
+         );
+      }
+
+      await Promise.all(promises);
+      console.log("Telegram notification sent successfully.");
+
+    } catch (e) {
+      console.error("Failed to send Telegram notification:", e);
+    }
+  };
 
   const submitReport = async () => {
     if (activities.some(a => !a.task)) {
@@ -25,30 +99,49 @@ const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, rep
       return;
     }
     try {
+      // FIX: Use standard ISO format YYYY-MM-DD for storage to prevent database errors and filter mismatches
+      const isoDate = new Date().toISOString().split('T')[0]; 
+      
       const report: DailyReport = {
         id: Math.random().toString(36).substr(2, 9),
         userId: currentUser.id,
-        date: new Date().toDateString(),
-        activities: activities.map(a => ({ ...a, quantity: Number(a.quantity) }))
+        date: isoDate,
+        activities: activities.map(a => ({ 
+            ...a, 
+            quantity: Number(a.quantity),
+            unit: a.unit?.trim() || '' 
+        }))
       };
+      
       await onAddReport(report);
+      
+      // Trigger Telegram
+      toast.info("Memproses notifikasi...");
+      await sendTelegramReport(report);
+
       setShowAdd(false);
-      setActivities([{ task: '', quantity: 1, link: '' }]);
-      toast.success(`Laporan harian dengan ${activities.length} aktivitas berhasil disimpan!`);
+      setActivities([{ task: '', quantity: 1, unit: '', link: '' }]);
+      toast.success(`Laporan harian berhasil disimpan!`);
     } catch (err: any) {
-      toast.error(err?.message || 'Gagal menyimpan laporan harian. Periksa koneksi dan coba lagi.');
+      toast.error(err?.message || 'Gagal menyimpan laporan harian.');
     }
   };
 
   const isOwner = currentUser.role === UserRole.OWNER;
   const isManagementOverseer = [UserRole.OWNER, UserRole.MANAGER].includes(currentUser.role);
-  // Show reporting capability to all roles EXCEPT owner as requested
   const canReport = currentUser.role !== UserRole.OWNER;
   
-  const displayReports = isOwner ? reports : reports.filter(r => r.userId === currentUser.id || (isManagementOverseer && r.date === new Date().toDateString()));
+  // FIX Logic Filter: Staff sees ALL their own reports. Manager sees ALL today's reports.
+  const displayReports = isOwner 
+    ? reports 
+    : reports.filter(r => 
+        r.userId === currentUser.id || 
+        (isManagementOverseer && r.date === new Date().toISOString().split('T')[0])
+      );
 
   return (
     <div className="space-y-6">
+      {/* ... header ... */}
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-xl font-bold text-slate-800">Laporan Harian</h3>
@@ -79,10 +172,13 @@ const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, rep
             <tbody className="divide-y divide-slate-50">
               {displayReports.slice().reverse().map(report => {
                 const user = users.find(u => u.id === report.userId);
+                // Render nicely formatted date
+                const displayDate = new Date(report.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                
                 return (
                   <tr key={report.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-5">
-                      <span className="text-xs font-bold text-slate-700">{report.date}</span>
+                      <span className="text-xs font-bold text-slate-700">{displayDate}</span>
                     </td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-3">
@@ -135,8 +231,10 @@ const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, rep
                  {selectedReport.activities.map((act, i) => (
                     <div key={i} className="bg-slate-50 p-5 rounded-[1.5rem] border border-slate-100">
                        <div className="flex justify-between items-start mb-2">
-                          <p className="text-sm font-bold text-slate-800">{act.task}</p>
-                          <span className="bg-white px-2 py-1 rounded-lg text-[10px] font-black text-blue-600 shadow-sm">{act.quantity}x</span>
+                          <p className="text-sm font-bold text-slate-800 w-2/3">{act.task}</p>
+                          <span className="bg-white px-3 py-1 rounded-lg text-[10px] font-black text-blue-600 shadow-sm border border-slate-100">
+                             {act.quantity} {act.unit || 'unit'}
+                          </span>
                        </div>
                        {act.link && (
                           <a href={act.link} target="_blank" className="inline-flex items-center gap-2 text-[10px] font-black text-blue-500 uppercase tracking-widest hover:underline mt-2">
@@ -153,31 +251,31 @@ const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, rep
       {/* Add Report Modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4">
-          <div className="bg-white rounded-[3.5rem] w-full max-w-xl p-12 shadow-2xl overflow-hidden flex flex-col border border-white/20">
+          <div className="bg-white rounded-[3.5rem] w-full max-w-xl p-12 shadow-2xl overflow-hidden flex flex-col border border-white/20 max-h-[90vh]">
             <h3 className="text-3xl font-black text-slate-800 mb-10 uppercase tracking-tight leading-none italic">Log Aktivitas<br/><span className="text-blue-600">Produktivitas Harian</span></h3>
-            <div className="flex-1 overflow-y-auto space-y-8 pr-4 custom-scrollbar max-h-[60vh]">
+            <div className="flex-1 overflow-y-auto space-y-8 pr-4 custom-scrollbar">
               {activities.map((act, idx) => (
-                <div key={idx} className="bg-slate-50 p-8 rounded-[2.5rem] space-y-6 border border-slate-100 relative group animate-in slide-in-from-right duration-300">
+                <div key={idx} className="bg-slate-50 p-6 md:p-8 rounded-[2.5rem] space-y-6 border border-slate-100 relative group animate-in slide-in-from-right duration-300">
                   <button onClick={() => handleRemoveActivity(idx)} className="absolute top-6 right-6 text-slate-300 hover:text-rose-500 transition-colors">✕</button>
                   <div className="space-y-3">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">TUGAS / PEKERJAAN</label>
-                    <input 
-                      className="w-full p-5 bg-white border-2 border-transparent rounded-[1.5rem] text-xs font-black focus:border-blue-600 outline-none shadow-sm transition"
+                    <textarea 
+                      className="w-full p-5 bg-white border-2 border-transparent rounded-[1.5rem] text-xs font-black focus:border-blue-600 outline-none shadow-sm transition resize-none h-24"
                       value={act.task}
                       onChange={e => {
                         const newAct = [...activities];
                         newAct[idx].task = e.target.value;
                         setActivities(newAct);
                       }}
-                      placeholder="Apa yang telah dikerjakan?"
+                      placeholder="Deskripsikan pekerjaan yang anda selesaikan..."
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">KUANTITAS (QTY)</label>
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">KUANTITAS (ANGKA)</label>
                       <input 
                         type="number"
-                        className="w-full p-5 bg-white border-2 border-transparent rounded-xl text-xs font-black focus:border-blue-600 outline-none shadow-sm transition text-center"
+                        className="w-full p-4 bg-white border-2 border-transparent rounded-xl text-xs font-black focus:border-blue-600 outline-none shadow-sm transition text-center"
                         value={act.quantity}
                         onChange={e => {
                           const newAct = [...activities];
@@ -186,8 +284,23 @@ const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, rep
                         }}
                       />
                     </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">LINK HASIL (OPS)</label>
+                     <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">SATUAN (OPSIONAL)</label>
+                      <input 
+                        type="text"
+                        className="w-full p-4 bg-white border-2 border-transparent rounded-xl text-xs font-black focus:border-blue-600 outline-none shadow-sm transition text-center"
+                        value={act.unit}
+                        onChange={e => {
+                          const newAct = [...activities];
+                          newAct[idx].unit = e.target.value;
+                          setActivities(newAct);
+                        }}
+                        placeholder="Pcs, Jam, Lembar..."
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">LINK HASIL (OPSIONAL)</label>
                       <input 
                         className="w-full p-5 bg-white border-2 border-transparent rounded-xl text-xs font-black focus:border-blue-600 outline-none shadow-sm transition"
                         value={act.link}
@@ -196,9 +309,8 @@ const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, rep
                           newAct[idx].link = e.target.value;
                           setActivities(newAct);
                         }}
-                        placeholder="Link GDrive/Web"
+                        placeholder="https://..."
                       />
-                    </div>
                   </div>
                 </div>
               ))}
@@ -206,9 +318,9 @@ const DailyReportModule: React.FC<DailyReportProps> = ({ currentUser, users, rep
                 <Plus size={16} /> TAMBAH LIST TUGAS LAGI
               </button>
             </div>
-            <div className="flex gap-6 mt-12 pt-8 border-t border-slate-50">
+            <div className="flex gap-6 mt-8 pt-6 border-t border-slate-50 shrink-0">
               <button onClick={() => setShowAdd(false)} className="flex-1 py-5 text-slate-400 font-black uppercase tracking-widest hover:bg-slate-50 rounded-[1.5rem] text-[10px] transition">BATAL</button>
-              <button onClick={submitReport} className="flex-1 bg-slate-900 text-white py-5 rounded-[1.5rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-2xl shadow-slate-100 hover:bg-blue-600 transition">LAPORKAN AKTIVITAS</button>
+              <button onClick={submitReport} className="flex-1 bg-slate-900 text-white py-5 rounded-[1.5rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-2xl shadow-slate-100 hover:bg-blue-600 transition">LAPORKAN & KIRIM</button>
             </div>
           </div>
         </div>

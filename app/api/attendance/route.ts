@@ -26,9 +26,9 @@ export async function POST(request: Request) {
 
        // Hardcoded 500m tolerance (or strictly match OFFICE_RADIUS_METERS constant)
        // Giving slightly more buffer on server side (e.g. 100m) to account for GPS jitter
-       if (dist > 10) { 
+       if (dist > 15) { 
           return NextResponse.json(
-            { error: 'GEOFENCE_VIOLATION', message: `Lokasi tidak valid. Jarak ke kantor: ${Math.round(dist)}m. Batas Maksimal: 10m` }, 
+            { error: 'GEOFENCE_VIOLATION', message: `Lokasi tidak valid. Jarak ke kantor: ${Math.round(dist)}m. Batas Maksimal: 15m` }, 
             { status: 403 }
           );
        }

@@ -190,6 +190,7 @@ export interface DailyReport {
   activities: {
     task: string;
     quantity: number;
+    unit?: string;
     link?: string;
     imageUrl?: string;
   }[];
@@ -236,4 +237,35 @@ export interface SystemLog {
   target?: string;
   details: string;
   metadata?: any;
+}
+
+export interface ChatRoom {
+  id: string;
+  name: string;
+  type: 'GROUP' | 'DM';
+  createdBy: string;
+  createdAt: number;
+  lastMessage?: {
+    content: string;
+    senderName: string;
+    timestamp: number;
+  };
+  memberIds: string[]; // For UI convenience
+}
+
+export interface ChatMessage {
+  id: string;
+  roomId: string;
+  senderId: string;
+  content: string;
+  attachmentUrl?: string; // Image or file
+  replyToId?: string;
+  replyToMessage?: {
+     id: string;
+     senderName: string;
+     content: string;
+  }; 
+  createdAt: number;
+  senderName?: string; // Populated on fetch
+  senderRole?: UserRole;
 }

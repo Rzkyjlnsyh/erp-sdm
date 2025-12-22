@@ -10,7 +10,7 @@ export const KANBAN_COLUMNS = [
 ];
 
 export const INITIAL_OFFICE_LOCATION = { lat: -7.826390, lng: 111.987060 }; // Jakarta Default
-export const OFFICE_RADIUS_METERS = 10; // Increased from 10 to 100 for better reliability in browsers
+export const OFFICE_RADIUS_METERS = 15; // Increased from 10 to 15 for better reliability in browsers
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.OWNER]: 'Owner',

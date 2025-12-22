@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState, useRef } from 'react';
-import { Plus, Bot, Layout as LayoutIcon, Unlock, Download, Upload, Pencil, Trash2, X, Save, AlertTriangle } from 'lucide-react';
+import { Plus, Bot, Layout as LayoutIcon, Unlock, Download, Upload, Pencil, Trash2, X, Save } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { useToast } from './Toast';
 

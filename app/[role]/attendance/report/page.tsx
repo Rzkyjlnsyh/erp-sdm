@@ -17,15 +17,23 @@ export default function AttendanceReportPage() {
     const [searchUser, setSearchUser] = useState('');
     const [selectedRecord, setSelectedRecord] = useState<Attendance | null>(null);
 
-    // Security Check
-    if (store.currentUser?.role !== UserRole.OWNER && store.currentUser?.role !== UserRole.FINANCE) {
+    // Initial Security Check (Allow All Authenticated Users)
+    if (!store.currentUser) {
         if (typeof window !== 'undefined') router.replace('/login');
+        // Prevent hydration mismatch or flash
         return null;
     }
+
+    const isStaff = store.currentUser.role === UserRole.STAFF;
 
     // Filter Logic
     const filteredData = useMemo(() => {
         let data = [...(store.attendance || [])];
+
+        // 0. Role Based Filtering (For Staff)
+        if (isStaff) {
+             data = data.filter(d => d.userId === store.currentUser?.id);
+        }
 
         // 1. Date Range
         if (startDate) {
@@ -39,8 +47,8 @@ export default function AttendanceReportPage() {
             data = data.filter(d => new Date(d.date).getTime() <= end.getTime());
         }
 
-        // 2. User Search
-        if (searchUser) {
+        // 2. User Search (Only for Non-Staff)
+        if (!isStaff && searchUser) {
             const lowerQuery = searchUser.toLowerCase();
             data = data.filter(d => {
                 const u = store.users.find(u => u.id === d.userId);
@@ -50,7 +58,7 @@ export default function AttendanceReportPage() {
 
         // Sort descending by date
         return data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [store.attendance, startDate, endDate, searchUser, store.users]);
+    }, [store.attendance, startDate, endDate, searchUser, store.users, store.currentUser, isStaff]);
 
     // Export Logic
     const handleExport = () => {
@@ -92,14 +100,16 @@ export default function AttendanceReportPage() {
                 </button>
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-black text-slate-800 tracking-tight">Laporan Detail Absensi</h1>
+                        <h1 className="text-3xl font-black text-slate-800 tracking-tight">
+                            {isStaff ? 'Riwayat Absensi Saya' : 'Laporan Detail Absensi'}
+                        </h1>
                         <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mt-2">
-                           Pantau kehadiran tim secara lengkap
+                           {isStaff ? 'Pantau catatan kehadiran pribadi anda' : 'Pantau kehadiran seluruh tim secara lengkap'}
                         </p>
                     </div>
                     <button 
                         onClick={handleExport}
-                        className="bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 shadow-xl shadow-emerald-200 transition flex items-center gap-3"
+                        className="bg-emerald-600 text-white px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 shadow-xl shadow-emerald-200 transition flex items-center gap-3 w-full md:w-auto justify-center"
                     >
                         <Download size={18} /> Export Data (CSV)
                     </button>
@@ -107,18 +117,20 @@ export default function AttendanceReportPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 grid grid-cols-1 md:grid-cols-4 gap-4">
-                 <div className="relative md:col-span-2">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input 
-                        className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl py-3 pl-12 pr-4 text-xs font-bold outline-none transition"
-                        placeholder="Cari nama karyawan..."
-                        value={searchUser}
-                        onChange={e => setSearchUser(e.target.value)}
-                    />
-                 </div>
+            <div className={`bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 grid grid-cols-1 ${!isStaff ? 'md:grid-cols-4' : 'md:grid-cols-2'} gap-4`}>
+                 {!isStaff && (
+                     <div className="relative md:col-span-2">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input 
+                            className="w-full bg-slate-50 border-2 border-transparent focus:border-blue-500 rounded-2xl py-3 pl-12 pr-4 text-xs font-bold outline-none transition"
+                            placeholder="Cari nama karyawan..."
+                            value={searchUser}
+                            onChange={e => setSearchUser(e.target.value)}
+                        />
+                     </div>
+                 )}
                  <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
-                     <span className="text-[10px] font-black text-slate-400">DARI</span>
+                     <span className="text-[10px] font-black text-slate-400 shrink-0">DARI</span>
                      <input 
                         type="date" 
                         className="bg-transparent text-xs font-bold outline-none text-slate-600 w-full"
@@ -127,7 +139,7 @@ export default function AttendanceReportPage() {
                      />
                  </div>
                  <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
-                     <span className="text-[10px] font-black text-slate-400">SAMPAI</span>
+                     <span className="text-[10px] font-black text-slate-400 shrink-0">SAMPAI</span>
                      <input 
                         type="date" 
                         className="bg-transparent text-xs font-bold outline-none text-slate-600 w-full"
