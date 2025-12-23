@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../context/StoreContext';
 import { ChatRoom, ChatMessage, User } from '../types';
-import { Send, Plus, Users, Hash, MessageSquare, Image as ImageIcon, MoreVertical, X, Search, FileText, Reply, Paperclip, Download, ExternalLink, ArrowLeft, Trash2 } from 'lucide-react';
+import { Send, Plus, Users, Hash, MessageSquare, Image as ImageIcon, MoreVertical, X, Search, FileText, Reply, Paperclip, Download, ExternalLink, ArrowLeft, Trash2, Pencil } from 'lucide-react';
 import { useToast } from './Toast';
 
 export default function ChatModule() {
@@ -23,14 +23,18 @@ export default function ChatModule() {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   
   // Mention State
+  // Mention State
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const mentionCandidates = mentionSearch !== null 
     ? store.users.filter(u => 
         (activeRoom?.memberIds?.includes(u.id)) && 
         (u.name.toLowerCase().includes(mentionSearch.toLowerCase()) || 
          u.username.toLowerCase().includes(mentionSearch.toLowerCase()))
-      ).slice(0, 5)
+      )
     : [];
+
+  // Edit State
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,6 +159,34 @@ export default function ChatModule() {
     }
   };
 
+  const handleUpdateMessage = async () => {
+     if (!editingMessageId || !inputText.trim()) return;
+     try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE || ''}/api/chat/messages`, {
+           method: 'PUT',
+           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${store.authToken}` },
+           body: JSON.stringify({ messageId: editingMessageId, content: inputText })
+        });
+        if (res.ok) {
+           toast.success('Message updated');
+           setEditingMessageId(null);
+           setInputText('');
+           fetchMessages();
+        }
+     } catch(e) { toast.error('Failed to update'); }
+  };
+
+  const startEditing = (msg: ChatMessage) => {
+     setEditingMessageId(msg.id);
+     setInputText(msg.content);
+     setReplyingTo(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingMessageId(null);
+    setInputText('');
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeRoomId) return;
@@ -178,9 +210,13 @@ export default function ChatModule() {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInputText(val);
+
+    // Auto-resize
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
 
     // Mention Detection
     const lastAt = val.lastIndexOf('@');
@@ -398,6 +434,16 @@ export default function ChatModule() {
                             >
                                 <Reply size={16} />
                             </button>
+                            
+                            {isMe && !msg.attachmentUrl && (
+                                <button
+                                   onClick={() => startEditing(msg)}
+                                   className={`absolute top-12 ${isMe ? '-left-10' : '-right-10'} p-2 rounded-full bg-slate-200 text-slate-500 opacity-0 group-hover/msg:opacity-100 hover:bg-blue-100 hover:text-blue-600 transition shadow-sm md:flex hidden`}
+                                   title="Edit"
+                                >
+                                   <Pencil size={16} />
+                                </button>
+                            )}
 
                             <div className={`relative px-4 py-3 md:px-5 md:py-3 rounded-2xl text-sm font-medium leading-relaxed shadow-sm break-words
                                 ${isMe 
@@ -488,48 +534,69 @@ export default function ChatModule() {
                   </div>
                )}
 
-               <div className={`flex items-center space-x-2 bg-slate-50 p-2 rounded-[1.5rem] border border-slate-100 shadow-sm focus-within:ring-2 ring-blue-100 transition ${replyingTo ? 'rounded-t-none' : ''}`}>
-                  <button onClick={() => fileInputRef.current?.click()} className="p-2 md:p-3 bg-white rounded-full text-slate-400 hover:text-blue-500 shadow-sm transition active:scale-90">
+               {editingMessageId && (
+                  <div className="absolute -top-12 left-2 right-2 md:left-6 md:right-6 h-12 bg-amber-50 border border-amber-200 border-b-0 rounded-t-xl flex items-center justify-between px-4 animate-in slide-in-from-bottom-2 fade-in duration-200 shadow-sm">
+                      <div className="flex items-center gap-2">
+                          <Pencil size={14} className="text-amber-600 shrink-0" />
+                          <span className="text-xs font-bold text-amber-700">Editing Message</span>
+                      </div>
+                      <button onClick={cancelEditing} className="p-2 hover:bg-amber-100 rounded-full transition">
+                          <X size={16} className="text-amber-700"/>
+                      </button>
+                  </div>
+               )}
+
+               <div className={`flex items-end space-x-2 bg-slate-50 p-2 rounded-[1.5rem] border border-slate-100 shadow-sm focus-within:ring-2 ring-blue-100 transition ${(replyingTo || editingMessageId) ? 'rounded-t-none' : ''}`}>
+                  <button onClick={() => fileInputRef.current?.click()} className="p-2 md:p-3 bg-white rounded-full text-slate-400 hover:text-blue-500 shadow-sm transition active:scale-90 flex-shrink-0 mb-1">
                      <Paperclip size={20} />
                   </button>
                   <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
                   
                   {/* Mention Popup */}
                   {mentionSearch !== null && mentionCandidates.length > 0 && (
-                      <div className="absolute bottom-full left-4 mb-2 bg-white rounded-xl shadow-2xl border border-slate-100 p-2 w-64 animate-in slide-in-from-bottom-2 z-50">
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">Mention User</p>
+                      <div className="absolute bottom-full left-4 mb-2 bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-64 max-h-60 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2 z-50">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-4 mb-2 sticky top-0 bg-white pb-2 border-b border-slate-50">Mention User</p>
                           {mentionCandidates.map(u => (
                               <div 
                                   key={u.id}
-                                  onClick={() => insertMention(u.name.replace(/\s/g,''))} // Removing spaces for the actual mention text if desired, or keep them. Often mentions are @FirstLast or @username
-                                  className="flex items-center space-x-2 p-2 hover:bg-blue-50 rounded-lg cursor-pointer"
+                                  onClick={() => insertMention(u.name.replace(/\s/g,''))} 
+                                  className="flex items-center space-x-2 px-4 py-2 hover:bg-blue-50 cursor-pointer transition"
                               >
-                                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 overflow-hidden">
-                                    {u.avatarUrl ? <img src={u.avatarUrl} alt={u.name} /> : u.name.substring(0,2).toUpperCase()}
+                                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">
+                                    {u.avatarUrl ? <img src={u.avatarUrl} alt={u.name} className="w-full h-full rounded-full object-cover" /> : u.name.substring(0,2).toUpperCase()}
                                   </div>
-                                  <div>
-                                      <p className="text-sm font-bold text-slate-700">{u.name}</p>
-                                      <p className="text-[10px] text-slate-400">@{u.username}</p>
+                                  <div className="min-w-0">
+                                      <p className="text-xs font-bold text-slate-700 truncate">{u.name}</p>
+                                      <p className="text-[10px] text-slate-400 truncate">@{u.username}</p>
                                   </div>
                               </div>
                           ))}
                       </div>
                   )}
 
-                  <input 
-                    className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-slate-700 placeholder:text-slate-400 px-2 min-w-0"
-                    placeholder={`Message...`}
+                  <textarea 
+                    className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-slate-700 placeholder:text-slate-400 px-2 min-w-0 resize-none py-3 custom-scrollbar"
+                    // placeholder={`Message...`} // Placeholder logic if needed
+                    placeholder={editingMessageId ? "Edit your message..." : "Message..."}
                     value={inputText}
                     onChange={handleInputChange}
-                    onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                    style={{ height: '44px', maxHeight: '120px' }}
+                    rows={1}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            if (editingMessageId) handleUpdateMessage();
+                            else handleSendMessage();
+                        }
+                    }}
                   />
                   
                   <button 
-                    onClick={handleSendMessage}
+                    onClick={editingMessageId ? handleUpdateMessage : handleSendMessage}
                     disabled={!inputText.trim()}
-                    className="p-2 md:p-3 bg-slate-900 text-white rounded-full hover:bg-blue-600 disabled:opacity-50 disabled:hover:bg-slate-900 shadow-lg transition transform active:scale-95 flex-shrink-0"
+                    className={`p-2 md:p-3 text-white rounded-full shadow-lg transition transform active:scale-95 flex-shrink-0 mb-1 ${editingMessageId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-slate-900 hover:bg-blue-600' } disabled:opacity-50 disabled:hover:bg-slate-900`}
                   >
-                     <Send size={18} />
+                     {editingMessageId ? <Pencil size={18} /> : <Send size={18} />}
                   </button>
                </div>
             </div>

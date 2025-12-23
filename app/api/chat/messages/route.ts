@@ -119,3 +119,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to send' }, { status: 500 });
   }
 }
+
+export async function PUT(request: Request) {
+  try {
+    const user = await authorize();
+    const body = await request.json();
+    const { messageId, content } = body;
+
+    if (!messageId || !content) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+
+    const msgCheck = await pool.query('SELECT sender_id FROM chat_messages WHERE id = $1', [messageId]);
+    if (msgCheck.rows.length === 0) return NextResponse.json({ error: 'Message not found' }, { status: 404 });
+    
+    if (msgCheck.rows[0].sender_id !== user.id) {
+       return NextResponse.json({ error: 'Unauthorized to edit' }, { status: 403 });
+    }
+
+    await pool.query('UPDATE chat_messages SET content = $1 WHERE id = $2', [content, messageId]);
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
+  }
+}
