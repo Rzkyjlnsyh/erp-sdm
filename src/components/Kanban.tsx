@@ -601,6 +601,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ project, users, curre
   const [taskComments, setTaskComments] = useState<{ [taskId: string]: string }>({});
   const [proofForm, setProofForm] = useState({ description: '', link: '' });
   const [showHistory, setShowHistory] = useState<string | null>(null);
+  const [showEditTask, setShowEditTask] = useState<string | null>(null);
 
   const handleAddComment = (idx: number) => {
     const taskId = project.tasks[idx].id;
@@ -673,24 +674,117 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ project, users, curre
         </div>
 
         <div className="flex-1 overflow-y-auto flex flex-col md:flex-row custom-scrollbar">
-           <div className="flex-1 p-6 md:p-8 space-y-10">
+            <div className="flex-1 p-6 md:p-8 space-y-10">
               <section className="space-y-6">
                  <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">PROGRESS TUGAS</h4>
                  <div className="space-y-4">
                     {project.tasks.map((task: Task, idx: number) => (
                       <div key={task.id} className={`p-8 rounded-[2rem] border-2 transition-all ${task.isCompleted ? 'bg-emerald-50/50 border-emerald-100 opacity-80' : 'bg-white border-slate-100 shadow-sm hover:shadow-xl'}`}>
                          <div className="flex justify-between items-start gap-4 mb-4">
-                            <div className="flex items-center space-x-4 flex-1">
-                               <button onClick={() => { if(!task.isCompleted) { setActiveTaskIndex(idx); setProofForm({description:'', link:''}); } }} className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center transition-all ${task.isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 hover:border-blue-600'}`}>
-                                  {task.isCompleted && <CheckCircle size={20} />}
-                               </button>
-                               <span className={`text-base font-black ${task.isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{task.title}</span>
+                            {/* Task Content or Edit Form */}
+                            {activeTaskIndex === idx && !task.isCompleted && showEditTask === task.id ? (
+                               <div className="flex-1 space-y-3">
+                                  <input 
+                                    className="w-full p-3 border-2 border-blue-500 rounded-xl text-sm font-bold outline-none" 
+                                    autoFocus
+                                    defaultValue={task.title}
+                                    onKeyDown={(e) => {
+                                      if(e.key === 'Enter') {
+                                        const val = (e.target as HTMLInputElement).value;
+                                        if(val && val !== task.title) {
+                                           // Save Title Edit
+                                           const updated = [...project.tasks];
+                                           updated[idx].title = val;
+                                           updated[idx].history.push({ 
+                                             id: Math.random().toString(36).substr(2, 9), 
+                                             userId: currentUser.id, 
+                                             userName: currentUser.name, 
+                                             action: `Edit Judul: "${task.title}" -> "${val}"`, 
+                                             timestamp: Date.now() 
+                                           });
+                                           onUpdate({ ...project, tasks: updated });
+                                           toast.success('Judul tugas diperbarui');
+                                        }
+                                        setShowEditTask(null);
+                                      } else if (e.key === 'Escape') {
+                                        setShowEditTask(null);
+                                      }
+                                    }}
+                                  />
+                                  <div className="flex items-center gap-2">
+                                     <span className="text-[10px] font-bold text-slate-400 uppercase">EDIT PIC:</span>
+                                     <div className="flex flex-wrap gap-2">
+                                        {users.map(u => (
+                                          <button 
+                                            key={u.id}
+                                            onClick={() => {
+                                               const updated = [...project.tasks];
+                                               const currentPICS = updated[idx].assignedTo;
+                                               if (currentPICS.includes(u.id)) {
+                                                  updated[idx].assignedTo = currentPICS.filter(id => id !== u.id);
+                                               } else {
+                                                  updated[idx].assignedTo = [...currentPICS, u.id];
+                                               }
+                                               
+                                               // Log changes
+                                               const action = currentPICS.includes(u.id) ? `Hapus PIC: ${u.name}` : `Tambah PIC: ${u.name}`;
+                                               updated[idx].history.push({ 
+                                                 id: Math.random().toString(36).substr(2, 9), 
+                                                 userId: currentUser.id, 
+                                                 userName: currentUser.name, 
+                                                 action: action, 
+                                                 timestamp: Date.now() 
+                                               });
+                                               
+                                               onUpdate({ ...project, tasks: updated });
+                                            }}
+                                            className={`px-3 py-1 rounded-full text-[9px] font-black uppercase transition border ${
+                                              task.assignedTo.includes(u.id) 
+                                                ? 'bg-blue-600 text-white border-blue-600' 
+                                                : 'bg-white text-slate-400 border-slate-200 hover:border-blue-400'
+                                            }`}
+                                          >
+                                            {u.name}
+                                          </button>
+                                        ))}
+                                     </div>
+                                     <button onClick={() => setShowEditTask(null)} className="ml-auto text-[9px] font-black text-blue-600 underline">SELESAI</button>
+                                  </div>
+                               </div>
+                            ) : (
+                               <div className="flex items-center space-x-4 flex-1">
+                                  <button onClick={() => { if(!task.isCompleted) { setActiveTaskIndex(idx); setProofForm({description:'', link:''}); } }} className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center transition-all ${task.isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 hover:border-blue-600'}`}>
+                                     {task.isCompleted && <CheckCircle size={20} />}
+                                  </button>
+                                  <div className="space-y-1">
+                                    <span className={`text-base font-black ${task.isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{task.title}</span>
+                                    <div className="flex -space-x-1.5 items-center">
+                                      {task.assignedTo.map((uid: string) => (
+                                        <div key={uid} title={users.find(u => u.id === uid)?.name} className="w-5 h-5 rounded-full bg-blue-100 text-[8px] font-black flex items-center justify-center text-blue-600 border border-white uppercase cursor-help">
+                                          {users.find(u => u.id === uid)?.name.charAt(0)}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                               </div>
+                            )}
+
+                            <div className="flex space-x-1">
+                               {!task.isCompleted && (
+                                 <button 
+                                   onClick={() => { setActiveTaskIndex(idx); setShowEditTask(showEditTask === task.id ? null : task.id); }} 
+                                   className={`p-2 rounded-xl transition ${showEditTask === task.id ? 'bg-blue-50 text-blue-600' : 'text-slate-300 hover:bg-slate-50 hover:text-blue-500'}`}
+                                   title="Edit Judul & PIC Tugas"
+                                 >
+                                    <Edit2 size={16} />
+                                 </button>
+                               )}
+                               <button onClick={() => setShowHistory(showHistory === task.id ? null : task.id)} className="p-2 text-slate-300 hover:text-blue-600 transition" title="Riwayat Tugas"><HistoryIcon size={18} /></button>
                             </div>
-                            <button onClick={() => setShowHistory(showHistory === task.id ? null : task.id)} className="p-2 text-slate-300 hover:text-blue-600 transition"><HistoryIcon size={18} /></button>
                          </div>
 
                          {showHistory === task.id && (
-                           <div className="mb-6 bg-slate-50 p-6 rounded-2xl space-y-3 border border-slate-100">
+                           <div className="mb-6 bg-slate-50 p-6 rounded-2xl space-y-3 border border-slate-100 animate-in slide-in-from-top-2">
                              <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">LOG AKTIVITAS</h5>
                              {task.history.slice().reverse().map(h => (
                                <div key={h.id} className="text-[10px] flex flex-col md:flex-row md:justify-between border-l-2 border-blue-300 pl-4 py-1">
@@ -731,7 +825,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ project, users, curre
                            </div>
                          </div>
 
-                         {activeTaskIndex === idx && !task.isCompleted && (
+                         {activeTaskIndex === idx && !task.isCompleted && !showEditTask && (
                            <div className="mt-8 bg-blue-600 p-8 rounded-[2.5rem] text-white shadow-2xl animate-in slide-in-from-top duration-300">
                               <h5 className="text-[10px] font-black uppercase tracking-[0.3em] mb-6">SUBMIT PENYELESAIAN</h5>
                               <textarea className="w-full p-5 bg-white/10 border-2 border-white/20 rounded-[1.5rem] outline-none focus:bg-white focus:text-slate-900 transition mb-4 text-xs font-bold" placeholder="Apa yang Anda kerjakan?" value={proofForm.description} onChange={e => setProofForm({...proofForm, description: e.target.value})} />
