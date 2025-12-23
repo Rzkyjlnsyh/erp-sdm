@@ -2,15 +2,20 @@ import React, { useState } from 'react';
 import { useAppStore } from '../context/StoreContext';
 import { useRouter } from 'next/navigation';
 import { Project, UserRole, ProjectPriority, KanbanStatus, User } from '../types';
-import { Search, Calendar, CheckCircle2, AlertCircle, Clock, ChevronRight, BarChart2 } from 'lucide-react';
+import { Search, Calendar, CheckCircle2, AlertCircle, Clock, ChevronRight, BarChart2, Plus } from 'lucide-react';
+import { ProjectModal } from './ProjectModal';
+import { useToast } from './Toast';
+import { sendTelegramNotification, escapeHTML } from '../utils';
 
 export const ProjectList = () => {
-  const { projects, users, currentUser } = useAppStore();
+  const { projects, users, currentUser, settings, addProject, updateProject } = useAppStore();
   const router = useRouter();
+  const toast = useToast();
   
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [filterPriority, setFilterPriority] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // 1. Filter Projects based on Role & Search
   const visibleProjects = projects.filter(p => {
@@ -54,6 +59,39 @@ export const ProjectList = () => {
     router.push(`/${currentUser.role.toLowerCase()}/projects/${projectId}`);
   };
 
+  const handleSaveProject = (project: Project) => {
+    if (!currentUser) return;
+    addProject(project); // From store
+    
+    // Telegram Notification
+    const collaborators = users.filter(u => project.collaborators.includes(u.id));
+    const tagString = collaborators.map(u => u.telegramUsername || u.name).join(', ');
+    
+    const msg = `🚀 <b>Proyek Baru Dibuat</b>\n\n` +
+                `Proyek: <b>${escapeHTML(project.title)}</b>\n` +
+                `Prioritas: <b>${project.priority}</b>\n` +
+                `Oleh: <b>${escapeHTML(currentUser.name)}</b>\n\n` +
+                `Cc: ${escapeHTML(tagString)}`;
+    
+    let targetChatId = project.isManagementOnly ? settings.telegramOwnerChatId : settings.telegramGroupId;
+    
+    // Robust Chat ID Resolution
+    if (targetChatId) {
+        if (targetChatId.includes('_')) {
+             const parts = targetChatId.split('_');
+             if (!parts[0].startsWith('-')) {
+                 targetChatId = `-100${parts[0]}_${parts[1]}`;
+             }
+        } else if (!targetChatId.startsWith('-') && /^\d+$/.test(targetChatId)) {
+             targetChatId = `-100${targetChatId}`;
+        }
+    }
+    
+    sendTelegramNotification(settings.telegramBotToken, targetChatId, msg);
+    
+    setShowAddModal(false);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Header & Stats */}
@@ -69,6 +107,16 @@ export const ProjectList = () => {
            <p className="text-slate-500 font-medium">Semua proyek dalam tampilan terperinci.</p>
         </div>
         <div className="flex gap-4">
+             <button 
+               onClick={() => setShowAddModal(true)}
+               className="px-6 py-4 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200 text-white flex gap-2 items-center hover:bg-blue-700 transition"
+             >
+                <Plus size={20} className="stroke-[3px]" />
+                <div className="flex flex-col items-start leading-none">
+                    <span className="text-[10px] font-black uppercase tracking-widest">BUAT</span>
+                    <span className="text-sm font-black">PROYEK</span>
+                </div>
+             </button>
            <div className="px-6 py-4 bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center">
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">TOTAL</span>
               <span className="text-2xl font-black text-slate-800">{visibleProjects.length}</span>
@@ -214,6 +262,17 @@ export const ProjectList = () => {
            )}
         </div>
       </div>
+
+      {showAddModal && currentUser && (
+        <ProjectModal 
+          users={users} 
+          currentUser={currentUser} 
+          initialData={null} 
+          onClose={() => setShowAddModal(false)}
+          onSave={handleSaveProject}
+          toast={toast}
+        />
+      )}
     </div>
   );
 };
