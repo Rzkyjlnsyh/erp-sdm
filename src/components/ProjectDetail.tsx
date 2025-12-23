@@ -187,9 +187,13 @@ export const ProjectDetail = () => {
                                      <span className="text-[10px] uppercase font-bold text-slate-400">PIC:</span>
                                      <div className="flex -space-x-1">
                                        {task.assignedTo.map(uid => (
-                                          <div key={uid} className="w-5 h-5 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[8px] font-black uppercase text-slate-500">
-                                             {users.find(u => u.id === uid)?.name.slice(0,1)}
-                                          </div>
+                                           <div key={uid} className="w-5 h-5 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[8px] font-black uppercase text-slate-500 overflow-hidden">
+                                              {users.find(u => u.id === uid)?.avatarUrl ? (
+                                                  <img src={users.find(u => u.id === uid)?.avatarUrl} alt="pic" className="w-full h-full object-cover" />
+                                              ) : (
+                                                  users.find(u => u.id === uid)?.name.slice(0,1)
+                                              )}
+                                           </div>
                                        ))}
                                      </div>
                                   </div>
@@ -210,9 +214,13 @@ export const ProjectDetail = () => {
                 <div className="space-y-6 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                    {project.comments?.map(c => (
                        <div key={c.id} className="flex gap-4">
-                          <div className="w-10 h-10 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center text-xs font-black text-slate-700 uppercase shrink-0">
-                             {users.find(u => u.id === c.userId)?.name.slice(0,1)}
-                          </div>
+                           <div className="w-10 h-10 rounded-full bg-white border-2 border-slate-200 flex items-center justify-center text-xs font-black text-slate-700 uppercase shrink-0 overflow-hidden">
+                              {users.find(u => u.id === c.userId)?.avatarUrl ? (
+                                  <img src={users.find(u => u.id === c.userId)?.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                              ) : (
+                                  users.find(u => u.id === c.userId)?.name.slice(0,1)
+                              )}
+                           </div>
                           <div>
                              <div className="flex items-center gap-2 mb-1">
                                 <span className="text-xs font-black text-slate-800">{users.find(u => u.id === c.userId)?.name}</span>
@@ -253,8 +261,12 @@ export const ProjectDetail = () => {
                      const user = users.find(u => u.id === uid);
                      return (
                         <div key={uid} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition cursor-pointer">
-                           <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-black uppercase">
-                              {user?.name.slice(0,1)}
+                           <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-black uppercase overflow-hidden">
+                              {user?.avatarUrl ? (
+                                  <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                              ) : (
+                                  user?.name.slice(0,1)
+                              )}
                            </div>
                            <div>
                               <p className="text-xs font-bold text-slate-700">{user?.name}</p>

@@ -88,7 +88,8 @@ export async function POST(request: Request) {
       deviceId: u.device_id || deviceId,
       avatarUrl: u.avatar_url || undefined,
       jobTitle: u.job_title || undefined,
-      bio: u.bio || undefined
+      bio: u.bio || undefined,
+      isFreelance: !!u.is_freelance
     };
 
     const token = jwt.sign({ id: u.id, role: u.role }, JWT_SECRET, { expiresIn: '7d' });

@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 export async function POST(request: Request) {
   try {
     await authorize(['OWNER', 'MANAGER', 'FINANCE']);
-    const { id, name, username, telegramId, telegramUsername, role, password } = await request.json();
+    const { id, name, username, telegramId, telegramUsername, role, password, isFreelance } = await request.json();
     
     if (!id || !name || !username || !role) return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     if (!password || password.length < 6) return NextResponse.json({ error: 'Weak password' }, { status: 400 });
@@ -15,10 +15,10 @@ export async function POST(request: Request) {
     
     try {
         await pool.query(
-          'INSERT INTO users (id, name, username, telegram_id, telegram_username, role, password_hash) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-          [id, name, username, telegramId || '', telegramUsername || '', role, hash]
+          'INSERT INTO users (id, name, username, telegram_id, telegram_username, role, password_hash, is_freelance) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+          [id, name, username, telegramId || '', telegramUsername || '', role, hash, isFreelance || false]
         );
-        return NextResponse.json({ id, name, username, telegramId, telegramUsername, role }, { status: 201 });
+        return NextResponse.json({ id, name, username, telegramId, telegramUsername, role, isFreelance }, { status: 201 });
     } catch (e: any) {
         if (e.code === '23505') { 
           return NextResponse.json({ error: 'Username already exists' }, { status: 409 });

@@ -64,7 +64,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     const body = await request.json();
-    const { name, username, telegramId, telegramUsername, role, password, avatarUrl, jobTitle, bio } = body;
+    const { name, username, telegramId, telegramUsername, role, password, avatarUrl, jobTitle, bio, isFreelance } = body;
 
     // 3. Prevent Staff from changing their own Role or Telegram ID (Security)
     // Only Management can change sensitive fields (Role, TelegramID)
@@ -98,6 +98,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (telegramId && isManagement) { // Only Management can change system IDs
         updateFields.push(`telegram_id = $${counter++}`);
         values.push(telegramId);
+    }
+
+    if (isFreelance !== undefined && isManagement) { // Only Management can change freelance status
+        updateFields.push(`is_freelance = $${counter++}`);
+        values.push(isFreelance);
     }
 
     if (avatarUrl !== undefined) {
@@ -145,7 +150,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       deviceId: u.device_id,
       avatarUrl: u.avatar_url,
       jobTitle: u.job_title,
-      bio: u.bio
+      bio: u.bio,
+      isFreelance: u.is_freelance
     });
   } catch (error: any) {
     console.error('Update User Error:', error);

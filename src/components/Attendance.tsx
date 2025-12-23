@@ -66,11 +66,15 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
         const isLateCheck = now > startTime;
         setIsLate(isLateCheck);
 
-        // Geofencing: User MUST be at office
-        if (dist > OFFICE_RADIUS_METERS) {
-          toast.error(`Check-in Gagal: Lokasi Anda terlalu jauh dari kantor (${Math.round(dist)}m). Radius maksimal: ${OFFICE_RADIUS_METERS}m. Pastikan Anda berada di area kantor.`);
+        // Geofencing: User MUST be at office (UNLESS Freelance)
+        if (!currentUser.isFreelance && dist > OFFICE_RADIUS_METERS) {
+          toast.error(`Check-in Gagal: Lokasi Anda terlalu jauh dari kantor (${Math.round(dist)}m). Radius maksimal: ${OFFICE_RADIUS_METERS}m.`);
           setStage('IDLE');
           return;
+        }
+
+        if (currentUser.isFreelance) {
+           toast.info(`Mode Freelance Aktif: Lokasi dicatat (${Math.round(dist)}m dari kantor).`);
         }
 
         setStage(isLateCheck ? 'LATE_REASON' : 'SELFIE');

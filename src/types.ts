@@ -20,6 +20,7 @@ export interface User {
   avatarUrl?: string;
   jobTitle?: string;
   bio?: string;
+  isFreelance?: boolean;
 }
 
 export enum KanbanStatus {

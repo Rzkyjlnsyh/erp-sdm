@@ -231,11 +231,18 @@ export const ProjectList = () => {
                  {/* Team */}
                  <div className="col-span-2 flex justify-center w-full md:w-auto pt-4 md:pt-0">
                     <div className="flex -space-x-2">
-                       {project.collaborators.slice(0, 4).map(uid => (
-                          <div key={uid} className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-black text-slate-500 uppercase" title={users.find(u => u.id === uid)?.name}>
-                             {users.find(u => u.id === uid)?.name.slice(0, 1)}
-                          </div>
-                       ))}
+                       {project.collaborators.slice(0, 4).map(uid => {
+                          const u = users.find(user => user.id === uid);
+                          return (
+                            <div key={uid} className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-black text-slate-500 uppercase overflow-hidden" title={u?.name}>
+                               {u?.avatarUrl ? (
+                                   <img src={u.avatarUrl} alt={u.name} className="w-full h-full object-cover" />
+                               ) : (
+                                   u?.name.slice(0, 1)
+                               )}
+                            </div>
+                          );
+                       })}
                        {project.collaborators.length > 4 && (
                           <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[9px] font-black text-slate-400">
                              +{project.collaborators.length - 4}

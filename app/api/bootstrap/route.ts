@@ -174,7 +174,8 @@ export async function GET() {
           deviceIds: u.device_ids || [],
           avatarUrl: u.avatar_url || undefined,
           jobTitle: u.job_title || undefined,
-          bio: u.bio || undefined
+          bio: u.bio || undefined,
+          isFreelance: !!u.is_freelance
         })),
         projects: projectsRes.rows.map(p => ({
           id: p.id,

@@ -24,7 +24,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
   const [filter, setFilter] = useState('');
   
   // State for Add/Edit Form
-  const [formData, setFormData] = useState({ name: '', username: '', telegramId: '', telegramUsername: '', role: 'STAFF', password: '', passwordConfirm: '' });
+  const [formData, setFormData] = useState({ name: '', username: '', telegramId: '', telegramUsername: '', role: 'STAFF', password: '', passwordConfirm: '', isFreelance: false });
   
   // Ref for file input
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -32,7 +32,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
   const filteredUsers = users.filter(u => u.name.toLowerCase().includes(filter.toLowerCase()) || u.username.toLowerCase().includes(filter.toLowerCase()));
 
   const resetForm = () => {
-    setFormData({ name: '', username: '', telegramId: '', telegramUsername: '', role: 'STAFF', password: '', passwordConfirm: '' });
+    setFormData({ name: '', username: '', telegramId: '', telegramUsername: '', role: 'STAFF', password: '', passwordConfirm: '', isFreelance: false });
     setTargetUser(null);
   };
 
@@ -44,6 +44,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       telegramId: user.telegramId || '',
       telegramUsername: user.telegramUsername || '',
       role: user.role,
+      isFreelance: user.isFreelance || false,
       password: '', // Password not shown for security
       passwordConfirm: ''
     });
@@ -103,6 +104,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
           telegramId: formData.telegramId,
           telegramUsername: formData.telegramUsername,
           role: formData.role as UserRole,
+          isFreelance: formData.isFreelance,
           password: formData.password || undefined // Only update if filled
         };
         await onUpdateUser(updatedUser);
@@ -116,6 +118,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
           role: formData.role as UserRole,
           telegramId: formData.telegramId,
           telegramUsername: formData.telegramUsername,
+          isFreelance: formData.isFreelance,
           password: formData.password
         };
         await onAddUser(newUser);
@@ -299,6 +302,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                       u.role === UserRole.MANAGER ? 'bg-amber-100 text-amber-700' :
                       u.role === UserRole.FINANCE ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
                     }`}>{u.role}</span>
+                    {u.isFreelance && (
+                       <span className="ml-2 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-600 border border-emerald-200">
+                          REMOTE
+                       </span>
+                    )}
                   </td>
                   <td className="px-6 py-5">
                      <div className="flex items-center text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg w-fit">
@@ -427,6 +435,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                       <input className="w-full p-4 bg-white border-2 border-transparent focus:border-blue-600 rounded-2xl outline-none font-bold transition text-xs" placeholder="Contoh: @andisdm" value={formData.telegramUsername} onChange={e => setFormData({...formData, telegramUsername: e.target.value})} />
                     </div>
                   </div>
+              </div>
+
+              {/* FREELANCE TOGGLE */}
+              <div className="bg-emerald-50 p-6 rounded-[2rem] border border-emerald-100 flex items-center justify-between">
+                 <div>
+                    <h4 className="text-emerald-700 font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                       <LayoutIcon size={16} /> Status Freelance (Remote Work)
+                    </h4>
+                    <p className="text-[10px] text-emerald-600/70 font-bold mt-1 max-w-xs">
+                       Mengizinkan user absen dari lokasi mana saja (melewati validasi radius kantor).
+                    </p>
+                 </div>
+                 <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={formData.isFreelance} onChange={e => setFormData({...formData, isFreelance: e.target.checked})} />
+                    <div className="w-11 h-6 bg-emerald-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                 </label>
               </div>
 
               <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-200">
