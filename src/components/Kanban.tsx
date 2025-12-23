@@ -126,12 +126,19 @@ const Kanban: React.FC<KanbanProps> = ({ projects, users, currentUser, settings,
   };
 
   const handleMoveStatus = (project: Project, newStatus: KanbanStatus) => {
-    const isManagement = [UserRole.OWNER, UserRole.MANAGER, UserRole.FINANCE].includes(currentUser.role);
+    // Definisi Otoritas
+    const isManagement = [UserRole.OWNER, UserRole.MANAGER, UserRole.FINANCE, UserRole.SUPERADMIN].includes(currentUser.role);
+    const isStaff = currentUser.role === UserRole.STAFF;
     
-    if (newStatus === KanbanStatus.DONE && isManagement) {
-      toast.warning("Hanya Staff yang dapat memindahkan project ke status DONE untuk verifikasi akhir.");
+    // ATURAN BARU:
+    // 1. Staff -> DILARANG geser ke DONE (Max sampai PREVIEW)
+    if (isStaff && newStatus === KanbanStatus.DONE) {
+      toast.warning("Staff hanya dapat update sampai status PREVIEW. Mohon lapor manajemen untuk finalisasi ke DONE / SELESAI.");
       return;
     }
+
+    // 2. Management -> BEBAS (Aturan lama yang memblokir management dihapus)
+    // Code continues below...
 
     if (project.status === newStatus) return;
 
