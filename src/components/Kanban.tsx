@@ -86,7 +86,28 @@ const Kanban: React.FC<KanbanProps> = ({ projects, users, currentUser, settings,
                 `Oleh: <b>${escapeHTML(currentUser.name)}</b>\n\n` +
                 `Cc: ${escapeHTML(tagString)}`;
     
-    const targetChatId = project.isManagementOnly ? settings.telegramOwnerChatId : settings.telegramGroupId;
+    let targetChatId = project.isManagementOnly ? settings.telegramOwnerChatId : settings.telegramGroupId;
+    
+    // Fallback: If targetChatId is numeric and doesn't start with '-', maybe user forgot prefix
+    // BUT we must respect the new format "ID_THREAD".
+    // Logic: If it contains "_" -> It's topic format, handle prefix on the first part
+    // If it doesn't -> It's normal ID, handle prefix
+    
+    console.log("Original Target Chat ID:", targetChatId);
+
+    if (targetChatId) {
+        if (targetChatId.includes('_')) {
+             const parts = targetChatId.split('_');
+             if (!parts[0].startsWith('-')) {
+                 targetChatId = `-100${parts[0]}_${parts[1]}`;
+             }
+        } else if (!targetChatId.startsWith('-') && /^\d+$/.test(targetChatId)) {
+             targetChatId = `-100${targetChatId}`;
+        }
+    }
+
+    console.log("Formatted/Sending Target Chat ID:", targetChatId, "Token:", settings.telegramBotToken ? "PRESENT" : "MISSING");
+    
     sendTelegramNotification(settings.telegramBotToken, targetChatId, msg);
   };
 
