@@ -59,6 +59,12 @@ export const ProjectList = () => {
       {/* Header & Stats */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
+           <button 
+             onClick={() => router.push(`/${currentUser?.role.toLowerCase()}/kanban`)} 
+             className="mb-4 flex items-center gap-2 text-slate-400 hover:text-blue-600 transition text-[10px] font-black uppercase tracking-widest"
+           >
+             <ChevronRight className="rotate-180" size={14} /> Kembali ke Kanban
+           </button>
            <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">Daftar Proyek</h2>
            <p className="text-slate-500 font-medium">Semua proyek dalam tampilan terperinci.</p>
         </div>

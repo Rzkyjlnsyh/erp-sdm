@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation';
 import { KanbanStatus, UserRole, Project, Task, User, ProjectPriority, AppSettings, SystemLog, SystemActionType } from '../types';
 import { KANBAN_COLUMNS } from '../constants';
 import { 
-  Plus, CheckCircle, Clock, EyeOff, UserPlus, 
+  Plus, CheckCircle, Clock, EyeOff, UserPlus, UserCheck,
   History as HistoryIcon, Edit2, CheckCircle2, LayoutGrid, X, Circle
 } from 'lucide-react';
 import { sendTelegramNotification, escapeHTML } from '../utils';
@@ -239,7 +239,7 @@ const Kanban: React.FC<KanbanProps> = ({ projects, users, currentUser, settings,
                     key={project.id}
                     draggable
                     onDragStart={(e) => onDragStart(e, project.id)}
-                    className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:border-blue-500 hover:shadow-xl transition-all group relative overflow-hidden"
+                    className={`bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 cursor-grab active:cursor-grabbing hover:border-blue-500 hover:shadow-xl transition-all group relative overflow-hidden ${project.collaborators.includes(currentUser.id) ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
                   >
                     {/* Action Buttons (Top Right) */}
                     <div className="absolute top-4 right-4 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -259,12 +259,33 @@ const Kanban: React.FC<KanbanProps> = ({ projects, users, currentUser, settings,
                        </button>
                     </div>
 
-                    <div className="flex justify-between items-start mb-4 pr-16">
-                      <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg ${
-                        project.priority === 'High' ? 'bg-rose-500 text-white shadow-lg shadow-rose-100' : 
-                        project.priority === 'Medium' ? 'bg-amber-500 text-white shadow-lg shadow-amber-100' : 'bg-blue-500 text-white shadow-lg shadow-blue-100'
-                      }`}>{project.priority}</span>
-                      {project.isManagementOnly && <EyeOff size={12} className="text-slate-300" />}
+                    <div className="flex justify-between items-start mb-4 pr-16 bg-white">
+                      <div className="flex flex-col gap-2 items-start w-full">
+                        {(project.collaborators.includes(currentUser.id) || project.tasks.some(t => t.assignedTo.includes(currentUser.id))) && (
+                          <div className="flex gap-2 flex-wrap mb-1">
+                            {project.collaborators.includes(currentUser.id) && (
+                               <span className="bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded shadow-sm flex items-center gap-1">
+                                 <UserCheck size={10} /> TEAM
+                               </span>
+                            )}
+                            {(() => {
+                               const myTasks = project.tasks.filter(t => t.assignedTo.includes(currentUser.id)).length;
+                               if (myTasks > 0) return (
+                                 <span className="bg-amber-500 text-white text-[8px] font-black px-2 py-1 rounded shadow-sm flex items-center gap-1">
+                                   <CheckCircle2 size={10} /> {myTasks} TUGAS
+                                 </span>
+                               )
+                            })()}
+                          </div>
+                        )}
+                        <div className="flex justify-between w-full items-center">
+                          <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-lg ${
+                            project.priority === 'High' ? 'bg-rose-500 text-white shadow-lg shadow-rose-100' : 
+                            project.priority === 'Medium' ? 'bg-amber-500 text-white shadow-lg shadow-amber-100' : 'bg-blue-500 text-white shadow-lg shadow-blue-100'
+                          }`}>{project.priority}</span>
+                          {project.isManagementOnly && <EyeOff size={12} className="text-slate-300" />}
+                        </div>
+                      </div>
                     </div>
                     <h4 className="font-black text-slate-800 text-sm mb-2 group-hover:text-blue-600 transition leading-tight">{project.title}</h4>
                     <p className="text-[10px] font-bold text-slate-400 line-clamp-2 leading-relaxed mb-4">{project.description}</p>
@@ -577,17 +598,21 @@ interface TaskDetailModalProps {
 
 const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ project, users, currentUser, settings, onClose, onUpdate, onMoveStatus, onEditProject, toast }) => {
   const [activeTaskIndex, setActiveTaskIndex] = useState<number | null>(null);
-  const [commentText, setCommentText] = useState('');
+  const [taskComments, setTaskComments] = useState<{ [taskId: string]: string }>({});
   const [proofForm, setProofForm] = useState({ description: '', link: '' });
   const [showHistory, setShowHistory] = useState<string | null>(null);
 
   const handleAddComment = (idx: number) => {
-    if (!commentText) return;
+    const taskId = project.tasks[idx].id;
+    const text = taskComments[taskId];
+    if (!text) return;
+    
     const updated = [...project.tasks];
-    updated[idx].comments.push({ id: Date.now().toString(), userId: currentUser.id, text: commentText, createdAt: Date.now() });
-    updated[idx].history.push({ id: Math.random().toString(36).substr(2, 9), userId: currentUser.id, userName: currentUser.name, action: `Komentar: ${commentText}`, timestamp: Date.now() });
+    updated[idx].comments.push({ id: Date.now().toString(), userId: currentUser.id, text, createdAt: Date.now() });
+    updated[idx].history.push({ id: Math.random().toString(36).substr(2, 9), userId: currentUser.id, userName: currentUser.name, action: `Komentar: ${text}`, timestamp: Date.now() });
     onUpdate({ ...project, tasks: updated });
-    setCommentText('');
+    
+    setTaskComments(prev => ({ ...prev, [taskId]: '' }));
   };
 
   const finishTask = (idx: number) => {
@@ -656,7 +681,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ project, users, curre
                       <div key={task.id} className={`p-8 rounded-[2rem] border-2 transition-all ${task.isCompleted ? 'bg-emerald-50/50 border-emerald-100 opacity-80' : 'bg-white border-slate-100 shadow-sm hover:shadow-xl'}`}>
                          <div className="flex justify-between items-start gap-4 mb-4">
                             <div className="flex items-center space-x-4 flex-1">
-                               <button onClick={() => !task.isCompleted && setActiveTaskIndex(idx)} className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center transition-all ${task.isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 hover:border-blue-600'}`}>
+                               <button onClick={() => { if(!task.isCompleted) { setActiveTaskIndex(idx); setProofForm({description:'', link:''}); } }} className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center transition-all ${task.isCompleted ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-200 hover:border-blue-600'}`}>
                                   {task.isCompleted && <CheckCircle size={20} />}
                                </button>
                                <span className={`text-base font-black ${task.isCompleted ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{task.title}</span>
@@ -696,7 +721,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ project, users, curre
                              </div>
                            ))}
                            <div className="flex gap-2 bg-slate-100 p-2 rounded-2xl">
-                              <input className="flex-1 bg-white p-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500" placeholder="Instruksi perbaikan..." value={activeTaskIndex === idx ? '' : commentText} onChange={e => setCommentText(e.target.value)} />
+                              <input 
+                                className="flex-1 bg-white p-3 rounded-xl text-xs outline-none focus:ring-2 focus:ring-blue-500" 
+                                placeholder="Instruksi perbaikan..." 
+                                value={taskComments[task.id] || ''} 
+                                onChange={e => setTaskComments(prev => ({ ...prev, [task.id]: e.target.value }))} 
+                              />
                               <button onClick={() => handleAddComment(idx)} className="bg-slate-900 text-white px-5 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition">SEND</button>
                            </div>
                          </div>
@@ -707,7 +737,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ project, users, curre
                               <textarea className="w-full p-5 bg-white/10 border-2 border-white/20 rounded-[1.5rem] outline-none focus:bg-white focus:text-slate-900 transition mb-4 text-xs font-bold" placeholder="Apa yang Anda kerjakan?" value={proofForm.description} onChange={e => setProofForm({...proofForm, description: e.target.value})} />
                               <input className="w-full p-4 bg-white/10 border-2 border-white/20 rounded-xl outline-none focus:bg-white focus:text-slate-900 transition mb-6 text-xs font-bold" placeholder="Link Lampiran (Gdrive/File)" value={proofForm.link} onChange={e => setProofForm({...proofForm, link: e.target.value})} />
                               <div className="flex justify-end gap-3">
-                                 <button onClick={() => setActiveTaskIndex(null)} className="px-6 py-3 font-black text-[10px] uppercase tracking-widest opacity-60 hover:opacity-100">BATAL</button>
+                                 <button onClick={() => { setActiveTaskIndex(null); setProofForm({description:'', link:''}); }} className="px-6 py-3 font-black text-[10px] uppercase tracking-widest opacity-60 hover:opacity-100">BATAL</button>
                                  <button onClick={() => finishTask(idx)} className="bg-white text-blue-600 px-10 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl">SIMPAN BUKTI</button>
                               </div>
                            </div>
