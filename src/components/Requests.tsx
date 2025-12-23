@@ -1,4 +1,4 @@
-
+ 
 import React, { useState } from 'react';
 import { User, LeaveRequest, RequestType, RequestStatus, UserRole } from '../types';
 import { FileText, Plus, Check, X, Clock, AlertCircle, ImageIcon, UploadCloud } from 'lucide-react';
@@ -6,6 +6,7 @@ import { useToast } from './Toast';
 
 interface RequestsProps {
   currentUser: User;
+  users: User[]; // Added users prop
   requests: LeaveRequest[];
   onAddRequest: (req: LeaveRequest) => void;
   onUpdateRequest: (req: LeaveRequest) => void;
@@ -13,7 +14,8 @@ interface RequestsProps {
   uploadFile?: (file: File) => Promise<string>;
 }
 
-const RequestsModule: React.FC<RequestsProps> = ({ currentUser, requests, onAddRequest, onUpdateRequest, toast, uploadFile }) => {
+const RequestsModule: React.FC<RequestsProps> = ({ currentUser, users, requests, onAddRequest, onUpdateRequest, toast, uploadFile }) => {
+  // ... state ...
   const [showAdd, setShowAdd] = useState(false);
   const [attachment, setAttachment] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -23,6 +25,7 @@ const RequestsModule: React.FC<RequestsProps> = ({ currentUser, requests, onAddR
     endDate: new Date().toISOString().split('T')[0]
   });
 
+  // ... (validation and handlers remain same) ...
   const validateRequest = () => {
     if (!formData.description) {
       toast.warning("Harap tuliskan alasan permohonan dengan jelas.");
@@ -55,7 +58,7 @@ const RequestsModule: React.FC<RequestsProps> = ({ currentUser, requests, onAddR
       if (diffDays < 14) {
         toast.warning("Permohonan CUTI harus dilakukan minimal H-14 sebelum tanggal mulai.");
         return false;
-      }
+       }
       if (!attachment) {
          toast.warning("Wajib melampirkan foto formulir/pendukung untuk permohonan CUTI.");
          return false;
@@ -94,7 +97,8 @@ const RequestsModule: React.FC<RequestsProps> = ({ currentUser, requests, onAddR
   const handleAction = async (req: LeaveRequest, status: RequestStatus) => {
     try {
       await onUpdateRequest({ ...req, status });
-      toast.success(`Permohonan ${req.type} dari ${req.userId} telah ${status === RequestStatus.APPROVED ? 'disetujui' : 'ditolak'}.`);
+      const userName = users.find(u => u.id === req.userId)?.name || 'User';
+      toast.success(`Permohonan ${req.type} dari ${userName} telah ${status === RequestStatus.APPROVED ? 'disetujui' : 'ditolak'}.`);
     } catch (err: any) {
       toast.error(err?.message || 'Gagal memproses permohonan. Periksa koneksi dan coba lagi.');
     }
@@ -148,7 +152,7 @@ const RequestsModule: React.FC<RequestsProps> = ({ currentUser, requests, onAddR
           <table className="w-full text-left">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr>
-                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Info Jenis</th>
+                <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pemohon & Jenis</th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Tanggal</th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Detail Alasan</th>
                 <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Bukti</th>
@@ -157,22 +161,32 @@ const RequestsModule: React.FC<RequestsProps> = ({ currentUser, requests, onAddR
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {visibleRequests.slice().reverse().map(req => (
+              {visibleRequests.slice().reverse().map(req => {
+                const applicant = users.find(u => u.id === req.userId);
+                return (
                 <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-5">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        req.type === RequestType.SAKIT ? 'bg-rose-50 text-rose-500' : 
-                        req.type === RequestType.CUTI ? 'bg-indigo-50 text-indigo-500' : 'bg-amber-50 text-amber-500'
-                      }`}>
-                        <FileText size={16} />
-                      </div>
-                      <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${
-                        req.type === RequestType.SAKIT ? 'text-rose-600' : 
-                        req.type === RequestType.CUTI ? 'text-indigo-600' : 'text-amber-600'
-                      }`}>{req.type}</span>
+                    <div className="flex items-center gap-4 mb-2">
+                       <div className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-black text-slate-500 uppercase shadow-sm">
+                          {applicant?.name.charAt(0) || '?'}
+                       </div>
+                       <div>
+                          <p className="text-xs font-black text-slate-800 leading-tight">{applicant?.name || 'Unknown User'}</p>
+                          <p className="text-[9px] font-medium text-slate-400 uppercase tracking-wide">{applicant?.role || req.userId}</p>
+                       </div>
                     </div>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">ID: {req.userId}</p>
+                    <div className="flex items-center gap-2">
+                       <div className={`w-4 h-4 rounded flex items-center justify-center ${
+                          req.type === RequestType.SAKIT ? 'bg-rose-100 text-rose-600' : 
+                          req.type === RequestType.CUTI ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'
+                       }`}>
+                          <FileText size={10} />
+                       </div>
+                       <span className={`text-[10px] font-black uppercase tracking-widest ${
+                          req.type === RequestType.SAKIT ? 'text-rose-600' : 
+                          req.type === RequestType.CUTI ? 'text-indigo-600' : 'text-amber-600'
+                       }`}>{req.type}</span>
+                    </div>
                   </td>
                   <td className="px-6 py-5">
                     <div className="text-xs font-bold text-slate-700">
@@ -212,7 +226,8 @@ const RequestsModule: React.FC<RequestsProps> = ({ currentUser, requests, onAddR
                     </td>
                   )}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {visibleRequests.length === 0 && (

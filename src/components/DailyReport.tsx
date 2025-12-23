@@ -127,17 +127,19 @@ _Dikirim dari Sistem ERP SDM_
     }
   };
 
-  const isOwner = currentUser.role === UserRole.OWNER;
-  const isManagementOverseer = [UserRole.OWNER, UserRole.MANAGER].includes(currentUser.role);
-  const canReport = currentUser.role !== UserRole.OWNER;
+  // ACCESS CONTROL
+  // 1. View All: Owner, Manager, Finance must see ALL reports from ALL history (Superadmin view)
+  const canViewAll = [UserRole.OWNER, UserRole.MANAGER, UserRole.FINANCE].includes(currentUser.role);
   
-  // FIX Logic Filter: Staff sees ALL their own reports. Manager sees ALL today's reports.
-  const displayReports = isOwner 
+  // 2. Create Report: Staff, Manager, Finance can create. Owner usually monitors but logic allows != Owner.
+  const canReport = currentUser.role !== UserRole.OWNER; 
+
+  // Filter Logic:
+  // - Management: Sees EVERYTHING
+  // - Staff: Sees only OWN reports
+  const displayReports = canViewAll 
     ? reports 
-    : reports.filter(r => 
-        r.userId === currentUser.id || 
-        (isManagementOverseer && r.date === new Date().toISOString().split('T')[0])
-      );
+    : reports.filter(r => r.userId === currentUser.id);
 
   return (
     <div className="space-y-6">

@@ -11,6 +11,7 @@ export default function RequestsPage() {
   return (
     <RequestsModule 
       currentUser={store.currentUser} 
+      users={store.users}
       requests={store.requests} 
       onAddRequest={store.addRequest} 
       onUpdateRequest={store.updateRequest} 
