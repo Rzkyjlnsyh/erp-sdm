@@ -21,6 +21,19 @@ export default function ClientShell({ children }: { children: React.ReactNode })
   // Unread Chat Badge Logic
   const [unreadCount, setUnreadCount] = React.useState(0);
   
+  // Notification Logic
+  const lastUnreadRef = React.useRef(0);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    // Request Notification Permission on mount
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    // Preload Audio
+    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); 
+  }, []);
+
   useEffect(() => {
      if (!store.loaded || !store.authToken) return;
      
@@ -31,13 +44,37 @@ export default function ClientShell({ children }: { children: React.ReactNode })
            });
            if (res.ok) {
               const data = await res.json();
-              setUnreadCount(data.count);
+              const newCount = data.count;
+              
+              // If unread count INCREASED, it means new message arrived
+              if (newCount > lastUnreadRef.current) {
+                 // 1. Play Sound
+                 try {
+                    audioRef.current?.play().catch(() => {}); // User interaction might be required first, catch error
+                 } catch(e) {}
+
+                 // 2. Browser Notification (if background)
+                 if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+                    new Notification('Pesan Baru', {
+                       body: `Anda memiliki ${newCount} pesan belum dibaca`,
+                       icon: '/icon.png' // Optional fallback
+                    });
+                 }
+
+                 // 3. Document Title Blink (optional, simple logic)
+                 document.title = `(${newCount}) Pesan Baru! - SDM ERP`;
+              } else if (newCount === 0) {
+                 document.title = 'SDM ERP'; // Reset
+              }
+
+              setUnreadCount(newCount);
+              lastUnreadRef.current = newCount;
            }
         } catch(e) { /* silent fail */ }
      };
 
      fetchUnread();
-     const interval = setInterval(fetchUnread, 10000); // Poll every 10s
+     const interval = setInterval(fetchUnread, 3000); // Poll every 3s (Realtime feel)
      return () => clearInterval(interval);
   }, [store.loaded, store.authToken]);
   
