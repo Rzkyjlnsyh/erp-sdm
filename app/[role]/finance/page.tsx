@@ -23,6 +23,12 @@ export default function FinancePage() {
       onAddCategory={store.addCategory}
       onUpdateCategory={store.updateCategory}
       onDeleteCategory={store.deleteCategory}
+
+      // Business Unit Management
+      businessUnits={store.businessUnits || []}
+      onAddBusinessUnit={store.addBusinessUnit}
+      onUpdateBusinessUnit={store.updateBusinessUnit}
+      onDeleteBusinessUnit={store.deleteBusinessUnit}
       
       toast={toast} 
       uploadFile={store.uploadFile} 

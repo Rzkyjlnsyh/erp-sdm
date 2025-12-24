@@ -25,7 +25,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const user = await authorize(['OWNER']); // Only Owner can add accounts
+    const user = await authorize(['OWNER', 'FINANCE']); // Only Owner and Finance can add accounts
     const body = await request.json();
     
     // Validation

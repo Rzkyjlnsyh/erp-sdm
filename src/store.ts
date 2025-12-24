@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { TransactionCategory, User, UserRole, Project, Attendance, LeaveRequest, Transaction, AppSettings, DailyReport, UserSalaryConfig, PayrollRecord, SystemLog, SystemActionType, FinancialAccountDef } from './types';
+import { BusinessUnit, TransactionCategory, User, UserRole, Project, Attendance, LeaveRequest, Transaction, AppSettings, DailyReport, UserSalaryConfig, PayrollRecord, SystemLog, SystemActionType, FinancialAccountDef } from './types';
 import { INITIAL_OFFICE_LOCATION } from './constants';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -25,6 +25,7 @@ interface AppState {
   logs: SystemLog[];
   financialAccounts: FinancialAccountDef[];
   categories: TransactionCategory[];
+  businessUnits: BusinessUnit[];
 }
 
 const initialState: AppState = {
@@ -42,6 +43,7 @@ const initialState: AppState = {
   logs: [],
   financialAccounts: [],
   categories: [],
+  businessUnits: [],
   settings: {
     officeLocation: INITIAL_OFFICE_LOCATION,
     officeHours: { start: '08:00', end: '17:00' },
@@ -88,17 +90,20 @@ export const useStore = () => {
          setState(prev => ({ ...prev, currentUser, authToken: token }));
       }
 
-      // 2. Fetch Categories (Public or Protected, assuming user is logged in if calling bootstrap)
+      // 2. Fetch Categories & Business Units (Public or Protected)
       let initialCategories: TransactionCategory[] = [];
+      let initialBusinessUnits: BusinessUnit[] = [];
+      
       if (token) {
         try {
-            const resCat = await fetch(`${API_BASE}/api/categories`, { 
-                headers: { 'Authorization': `Bearer ${token}` } 
-            });
-            if (resCat.ok) {
-                initialCategories = await resCat.json();
-            }
-        } catch (e) { console.error("Failed to load categories", e); }
+            const [resCat, resUnits] = await Promise.all([
+                fetch(`${API_BASE}/api/categories`, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`${API_BASE}/api/business-units`, { headers: { 'Authorization': `Bearer ${token}` } })
+            ]);
+            
+            if (resCat.ok) initialCategories = await resCat.json();
+            if (resUnits.ok) initialBusinessUnits = await resUnits.json();
+        } catch (e) { console.error("Failed to load setup data", e); }
       }
 
       // 3. Bootstrap Data (only after auth is settled)
@@ -139,7 +144,8 @@ export const useStore = () => {
             logs: data.logs || [],
             settings: data.settings || prev.settings,
             financialAccounts: data.financialAccounts || [],
-            categories: initialCategories
+            categories: initialCategories,
+            businessUnits: initialBusinessUnits
           };
         });
       } catch (e) {
@@ -769,6 +775,57 @@ export const useStore = () => {
       }
   };
 
+  const addBusinessUnit = async (unit: BusinessUnit) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/business-units`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify(unit)
+        });
+        if (!res.ok) throw new Error('Failed to create business unit');
+        const created: BusinessUnit = await res.json();
+        setState(prev => ({ ...prev, businessUnits: [...prev.businessUnits, created] }));
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+  };
+
+  const updateBusinessUnit = async (unit: BusinessUnit) => {
+      setState(prev => ({
+          ...prev,
+          businessUnits: prev.businessUnits.map(u => u.id === unit.id ? unit : u)
+      }));
+      try {
+        const res = await fetch(`${API_BASE}/api/business-units/${unit.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify(unit)
+        });
+        if (!res.ok) throw new Error('Failed to update business unit');
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+  };
+
+  const deleteBusinessUnit = async (id: string) => {
+      setState(prev => ({
+          ...prev,
+          businessUnits: prev.businessUnits.filter(u => u.id !== id)
+      }));
+      try {
+        const res = await fetch(`${API_BASE}/api/business-units/${id}`, {
+            method: 'DELETE',
+            headers: { ...authHeaders }
+        });
+        if (!res.ok) throw new Error('Failed to delete business unit');
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+  };
+
   const uploadFile = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -814,6 +871,9 @@ export const useStore = () => {
     addCategory,
     updateCategory,
     deleteCategory,
+    addBusinessUnit,
+    updateBusinessUnit,
+    deleteBusinessUnit,
     resetDevice,
     uploadFile,
     impersonate: (role: UserRole) => {

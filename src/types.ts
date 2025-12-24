@@ -151,6 +151,7 @@ export interface Transaction {
   category: string;
   description: string;
   account: FinancialAccount;
+  businessUnitId?: string; // Optional: Link transaction to a specific business unit (KB Pos)
   imageUrl?: string; // New field for payment proof
 }
 
@@ -291,4 +292,11 @@ export interface TransactionCategory {
   type: TransactionType;
   parentId?: string | null;
   subCategories?: TransactionCategory[]; // For UI tree structure
+}
+
+export interface BusinessUnit {
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
 }

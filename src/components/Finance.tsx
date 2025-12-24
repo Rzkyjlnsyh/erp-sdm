@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Transaction, TransactionType, FinancialAccountDef, TransactionCategory } from '../types';
+import { Transaction, TransactionType, FinancialAccountDef, TransactionCategory, BusinessUnit } from '../types';
 import { formatCurrency } from '../utils';
-import { Plus, TrendingUp, Landmark, PieChart, FileSpreadsheet, Wallet, Filter, Search, Image as ImageIcon, BookOpen, ChevronRight, Trash2, Edit, Calendar, RefreshCw, CreditCard, FolderTree, ArrowDown, ArrowUp, Folder } from 'lucide-react';
+import { Plus, TrendingUp, Landmark, PieChart, FileSpreadsheet, Wallet, Filter, Search, Image as ImageIcon, BookOpen, ChevronRight, Trash2, Edit, Calendar, RefreshCw, CreditCard, FolderTree, ArrowDown, ArrowUp, Folder, Building2, LayoutGrid } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useToast } from './Toast';
 
@@ -25,6 +25,12 @@ interface FinanceProps {
   onUpdateCategory?: (cat: TransactionCategory) => Promise<void>;
   onDeleteCategory?: (id: string) => Promise<void>;
 
+  // Business Unit Props
+  businessUnits: BusinessUnit[];
+  onAddBusinessUnit?: (unit: BusinessUnit) => Promise<void>;
+  onUpdateBusinessUnit?: (unit: BusinessUnit) => Promise<void>;
+  onDeleteBusinessUnit?: (id: string) => Promise<void>;
+
   toast: ReturnType<typeof useToast>;
   uploadFile?: (file: File) => Promise<string>;
 }
@@ -42,10 +48,14 @@ const FinanceModule: React.FC<FinanceProps> = ({
   onAddCategory,
   onUpdateCategory,
   onDeleteCategory,
+  businessUnits,
+  onAddBusinessUnit,
+  onUpdateBusinessUnit,
+  onDeleteBusinessUnit,
   toast, 
   uploadFile 
 }) => {
-  const [activeTab, setActiveTab] = useState<'MUTASI' | 'BUKU_BESAR' | 'LAPORAN' | 'KATEGORI'>('MUTASI');
+  const [activeTab, setActiveTab] = useState<'MUTASI' | 'BUKU_BESAR' | 'LAPORAN' | 'KATEGORI' | 'KBPOS'>('MUTASI');
   const [showAdd, setShowAdd] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   
@@ -53,6 +63,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [filterAccount, setFilterAccount] = useState<string>('ALL');
+  const [filterBusinessUnit, setFilterBusinessUnit] = useState<string>('ALL');
   
   // Data State
   const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
@@ -74,6 +85,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
     category: '',
     description: '',
     account: '',
+    businessUnitId: '',
     imageUrl: ''
   });
 
@@ -99,6 +111,14 @@ const FinanceModule: React.FC<FinanceProps> = ({
   });
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]); // Ids of expanded categories
 
+  // Business Unit Form State
+  const [showBusinessModal, setShowBusinessModal] = useState(false);
+  const [businessFormData, setBusinessFormData] = useState<Partial<BusinessUnit>>({
+      name: '',
+      description: '',
+      isActive: true
+  });
+
   // Initial Load & Refresh
   const fetchData = async () => {
     setIsLoading(true);
@@ -109,7 +129,11 @@ const FinanceModule: React.FC<FinanceProps> = ({
     }
 
     try {
-      const resSum = await fetch('/api/finance/summary', { headers });
+      let url = '/api/finance/summary';
+      if (filterBusinessUnit && filterBusinessUnit !== 'ALL') {
+          url += `?businessUnitId=${filterBusinessUnit}`;
+      }
+      const resSum = await fetch(url, { headers });
       if (resSum.ok) {
         setSummary(await resSum.json());
       } else {
@@ -137,7 +161,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
 
   useEffect(() => {
     fetchData();
-  }, [selectedMonth, selectedYear]);
+  }, [selectedMonth, selectedYear, filterBusinessUnit]);
 
   // Set default ledger account when accounts load
   useEffect(() => {
@@ -147,13 +171,18 @@ const FinanceModule: React.FC<FinanceProps> = ({
     if (financialAccounts.length > 0 && !formData.account) {
       setFormData(prev => ({ ...prev, account: financialAccounts[0].name }));
     }
-  }, [financialAccounts]);
+    // Set default business unit if available
+    if (businessUnits.length > 0 && !formData.businessUnitId) {
+        setFormData(prev => ({ ...prev, businessUnitId: businessUnits[0].id }));
+    }
+  }, [financialAccounts, businessUnits]);
 
   const filteredTransactions = useMemo(() => {
     return localTransactions
       .filter(t => filterAccount === 'ALL' || t.account === filterAccount)
+      .filter(t => filterBusinessUnit === 'ALL' || t.businessUnitId === filterBusinessUnit) // Filter by KB Pos
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [localTransactions, filterAccount]);
+  }, [localTransactions, filterAccount, filterBusinessUnit]);
 
   // Ledger Logic
   const ledgerEntries = useMemo(() => {
@@ -178,6 +207,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
       category: '',
       description: '',
       account: financialAccounts[0]?.name || '',
+      businessUnitId: businessUnits[0]?.id || '',
       imageUrl: ''
     });
     setIsEditing(false);
@@ -192,6 +222,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
       category: t.category,
       description: t.description,
       account: t.account,
+      businessUnitId: t.businessUnitId || '',
       imageUrl: t.imageUrl || ''
     });
     setIsEditing(true);
@@ -352,6 +383,44 @@ const FinanceModule: React.FC<FinanceProps> = ({
       }
   };
 
+  // --- BUSINESS UNIT MANAGMENT HANDLERS ---
+  const handleOpenBusinessModal = (unit?: BusinessUnit) => {
+      if (unit) {
+          setBusinessFormData(unit);
+      } else {
+          setBusinessFormData({ name: '', description: '', isActive: true });
+      }
+      setShowBusinessModal(true);
+  };
+  
+  const handleSaveBusinessUnit = async () => {
+      if (!businessFormData.name) {
+          toast.warning("Nama Unit/KB Pos wajib diisi");
+          return;
+      }
+      try {
+        if (businessFormData.id && onUpdateBusinessUnit) {
+            await onUpdateBusinessUnit(businessFormData as BusinessUnit);
+            toast.success("KB Pos diupdate");
+        } else if (onAddBusinessUnit) {
+            await onAddBusinessUnit(businessFormData as BusinessUnit);
+            toast.success("KB Pos baru dibuat");
+        }
+        setShowBusinessModal(false);
+      } catch (e) {
+         toast.error("Gagal simpan KB Pos"); 
+      }
+  };
+
+  const handleDeleteBusinessUnit = async (id: string, name: string) => {
+      if (confirm(`Hapus KB Pos "${name}"? Data historis mungkin terpengaruh.`)) {
+          if (onDeleteBusinessUnit) {
+              await onDeleteBusinessUnit(id);
+              toast.success("KB Pos dihapus");
+          }
+      }
+  };
+
   const MONTHS = [
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -380,6 +449,22 @@ const FinanceModule: React.FC<FinanceProps> = ({
               className="bg-transparent text-sm font-bold text-slate-700 outline-none p-2"
             >
               {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <select 
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="bg-transparent text-sm font-bold text-slate-700 outline-none p-2"
+            >
+              {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            {/* Filter KB Pos */}
+             <select 
+              value={filterBusinessUnit} 
+              onChange={(e) => setFilterBusinessUnit(e.target.value)}
+              className="bg-blue-50 text-blue-700 text-xs font-black uppercase rounded-xl border-none outline-none p-2 tracking-wide"
+            >
+              <option value="ALL">SEMUA UNIT</option>
+              {businessUnits.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
             <button onClick={fetchData} className="p-2 bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-200 transition">
               <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
@@ -440,6 +525,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
           <button onClick={() => setActiveTab('BUKU_BESAR')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'BUKU_BESAR' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>BUKU BESAR</button>
           <button onClick={() => setActiveTab('LAPORAN')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'LAPORAN' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>LAPORAN PERIODE INI</button>
           <button onClick={() => setActiveTab('KATEGORI')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'KATEGORI' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>MANAJEMEN KATEGORI</button>
+          <button onClick={() => setActiveTab('KBPOS')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'KBPOS' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>MANAJEMEN KB POS (UNIT)</button>
         </div>
         <div className="flex items-center space-x-3 mb-4 flex-shrink-0">
           <div className="bg-slate-900 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-xl shadow-slate-100 italic">
@@ -474,6 +560,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
                   <th className="px-10 py-6">ACCOUNT</th>
                   <th className="px-10 py-6">DESKRIPSI</th>
                   <th className="px-10 py-6">KATEGORI</th>
+                  <th className="px-10 py-6">UNIT (KB)</th>
                   <th className="px-10 py-6 text-right">NOMINAL</th>
                   <th className="px-10 py-6 text-center">AKSI</th>
                 </tr>
@@ -493,6 +580,13 @@ const FinanceModule: React.FC<FinanceProps> = ({
                     <td className="px-10 py-7 text-xs font-bold text-slate-600 italic">"{t.description}"</td>
                     <td className="px-10 py-7">
                       <span className="bg-white border border-slate-100 text-slate-500 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-[0.15em]">{t.category || 'GENERAL'}</span>
+                    </td>
+                    <td className="px-10 py-7">
+                        {t.businessUnitId ? (
+                            <span className="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-[0.15em]">
+                                {businessUnits.find(u => u.id === t.businessUnitId)?.name || 'UNKNOWN'}
+                            </span>
+                        ) : <span className="text-slate-300">-</span>}
                     </td>
                     <td className={`px-10 py-7 text-sm font-black text-right ${t.type === TransactionType.IN ? 'text-emerald-600' : 'text-rose-600'}`}>
                       {t.type === TransactionType.IN ? '+' : '-'}{formatCurrency(t.amount)}
@@ -744,6 +838,88 @@ const FinanceModule: React.FC<FinanceProps> = ({
           </div>
       )}
 
+      {activeTab === 'KBPOS' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in zoom-in duration-500">
+             <div className="md:col-span-2 bg-gradient-to-r from-indigo-900 to-slate-900 p-10 rounded-[3rem] text-white shadow-2xl flex justify-between items-center relative overflow-hidden">
+                <div className="relative z-10">
+                   <h4 className="text-3xl font-black italic uppercase">Manajemen KB Pos (Unit Bisnis)</h4>
+                   <p className="text-xs font-black text-indigo-300 uppercase tracking-widest mt-2 max-w-xl">PISAHKAN ALIRAN KAS UNTUK SETIAP USAHA ANDA DALAM SATU DASHBOARD.</p>
+                </div>
+                <button onClick={() => handleOpenBusinessModal()} className="relative z-10 px-8 py-4 bg-white text-indigo-900 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-50 transition shadow-xl flex items-center gap-2">
+                    <Plus size={18} /> Tambah Unit Baru
+                </button>
+             </div>
+
+             <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {(businessUnits || []).length === 0 && <p className="text-center text-slate-400 col-span-full py-20 italic">Belum ada Unit Bisnis / KB Pos</p>}
+                {(businessUnits || []).map(unit => (
+                    <div key={unit.id} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition group relative overflow-hidden">
+                        <div className="flex justify-between items-start mb-6">
+                            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
+                                <Building2 size={24} />
+                            </div>
+                            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                                <button onClick={() => handleOpenBusinessModal(unit)} className="p-2 bg-amber-50 text-amber-500 rounded-xl hover:bg-amber-100"><Edit size={16} /></button>
+                                <button onClick={() => handleDeleteBusinessUnit(unit.id, unit.name)} className="p-2 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-100"><Trash2 size={16} /></button>
+                            </div>
+                        </div>
+                        <h5 className="text-xl font-black text-slate-800 uppercase italic mb-2">{unit.name}</h5>
+                        <p className="text-xs font-bold text-slate-400 line-clamp-2">{unit.description || 'Tidak ada deskripsi'}</p>
+                        
+                        <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between items-center">
+                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${unit.isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                {unit.isActive ? 'AKTIF' : 'NON-AKTIF'}
+                            </span>
+                            <span className="text-[9px] font-black text-indigo-300 uppercase tracking-widest">ID: {unit.id.substr(0, 6)}</span>
+                        </div>
+                    </div>
+                ))}
+             </div>
+          </div>
+      )}
+
+      {/* Modal: Form Business Unit */}
+      {showBusinessModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[3.5rem] w-full max-w-md p-10 shadow-2xl border border-white/20 animate-in zoom-in duration-300">
+               <div className="flex justify-between items-center mb-8">
+                 <div>
+                    <h3 className="text-2xl font-black text-slate-800 leading-tight italic uppercase tracking-tighter">{businessFormData.id ? 'Edit Unit' : 'Tambah Unit'}</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">KELOMPOK BISNIS / POS</p>
+                 </div>
+                 <button onClick={() => setShowBusinessModal(false)} className="p-4 bg-slate-100 rounded-2xl text-slate-400 hover:text-rose-500 transition">✕</button>
+               </div>
+               
+               <div className="space-y-6">
+                   <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NAMA UNIT / IDENTIFIER</label>
+                      <input 
+                        className="w-full p-5 bg-slate-50 border-2 border-transparent rounded-[1.5rem] text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white transition shadow-sm"
+                        placeholder="Contoh: Toko Cabang A, Freelance..."
+                        value={businessFormData.name}
+                        onChange={e => setBusinessFormData({...businessFormData, name: e.target.value})}
+                        autoFocus
+                      />
+                   </div>
+
+                   <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DESKRIPSI (OPSIONAL)</label>
+                      <input 
+                        className="w-full p-5 bg-slate-50 border-2 border-transparent rounded-[1.5rem] text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white transition shadow-sm"
+                        placeholder="Keterangan singkat..."
+                        value={businessFormData.description}
+                        onChange={e => setBusinessFormData({...businessFormData, description: e.target.value})}
+                      />
+                   </div>
+                   
+                   <button onClick={handleSaveBusinessUnit} className="w-full py-5 bg-indigo-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] hover:bg-indigo-600 transition text-[10px] shadow-xl mt-4">
+                        Simpan Unit Bisnis
+                   </button>
+               </div>
+            </div>
+          </div>
+      )}
+
       {/* Modal: Form Transaction - UPDATED WITH DYNAMIC CATEGORIES */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
@@ -794,6 +970,17 @@ const FinanceModule: React.FC<FinanceProps> = ({
                     </select>
                  </div>
                  <div className="space-y-3">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ALOKASI UNIT (KB POS)</label>
+                     <select 
+                       className="w-full p-5 bg-indigo-50 border-2 border-transparent rounded-[1.5rem] text-xs font-black uppercase tracking-widest outline-none focus:border-indigo-500 focus:bg-white transition shadow-sm text-indigo-900"
+                       value={formData.businessUnitId}
+                       onChange={e => setFormData({...formData, businessUnitId: e.target.value})}
+                     >
+                       <option value="">-- ILUSTRASI UMUM / SHARED --</option>
+                       {businessUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                     </select>
+                 </div>
+                 <div className="space-y-3 col-span-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">KATEGORI AKUNTANSI</label>
                     <select 
                       className="w-full p-5 bg-slate-50 border-2 border-transparent rounded-[1.5rem] text-xs font-black uppercase tracking-widest outline-none focus:border-blue-600 focus:bg-white transition shadow-sm"
@@ -926,6 +1113,48 @@ const FinanceModule: React.FC<FinanceProps> = ({
                              Simpan Data
                         </button>
                    </div>
+               </div>
+            </div>
+          </div>
+      )}
+
+      {/* Modal: Form Business Unit */}
+      {showBusinessModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[3.5rem] w-full max-w-md p-10 shadow-2xl border border-white/20 animate-in zoom-in duration-300">
+               <div className="flex justify-between items-center mb-8">
+                 <div>
+                    <h3 className="text-2xl font-black text-slate-800 leading-tight italic uppercase tracking-tighter">{businessFormData.id ? 'Edit Unit' : 'Tambah Unit'}</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">KELOMPOK BISNIS / POS</p>
+                 </div>
+                 <button onClick={() => setShowBusinessModal(false)} className="p-4 bg-slate-100 rounded-2xl text-slate-400 hover:text-rose-500 transition">✕</button>
+               </div>
+               
+               <div className="space-y-6">
+                   <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NAMA UNIT / IDENTIFIER</label>
+                      <input 
+                        className="w-full p-5 bg-slate-50 border-2 border-transparent rounded-[1.5rem] text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white transition shadow-sm"
+                        placeholder="Contoh: Toko Cabang A, Freelance..."
+                        value={businessFormData.name}
+                        onChange={e => setBusinessFormData({...businessFormData, name: e.target.value})}
+                        autoFocus
+                      />
+                   </div>
+
+                   <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">DESKRIPSI (OPSIONAL)</label>
+                      <input 
+                        className="w-full p-5 bg-slate-50 border-2 border-transparent rounded-[1.5rem] text-xs font-bold outline-none focus:border-indigo-600 focus:bg-white transition shadow-sm"
+                        placeholder="Keterangan singkat..."
+                        value={businessFormData.description}
+                        onChange={e => setBusinessFormData({...businessFormData, description: e.target.value})}
+                      />
+                   </div>
+                   
+                   <button onClick={handleSaveBusinessUnit} className="w-full py-5 bg-indigo-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] hover:bg-indigo-600 transition text-[10px] shadow-xl mt-4">
+                        Simpan Unit Bisnis
+                   </button>
                </div>
             </div>
           </div>

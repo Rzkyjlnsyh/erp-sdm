@@ -18,9 +18,9 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     await pool.query(
       `UPDATE transactions 
-       SET date = $1, amount = $2, type = $3, category = $4, description = $5, account = $6, image_url = $7
-       WHERE id = $8`,
-      [body.date, body.amount, body.type, body.category || null, body.description, body.account, body.imageUrl || null, id]
+       SET date = $1, amount = $2, type = $3, category = $4, description = $5, account = $6, business_unit_id = $7, image_url = $8
+       WHERE id = $9`,
+      [body.date, body.amount, body.type, body.category || null, body.description, body.account, body.businessUnitId || null, body.imageUrl || null, id]
     );
 
     return NextResponse.json(body);

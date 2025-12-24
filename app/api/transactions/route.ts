@@ -42,6 +42,7 @@ export async function GET(request: Request) {
         category: t.category,
         description: t.description,
         account: t.account,
+        businessUnitId: t.business_unit_id,
         imageUrl: t.image_url
     }));
 
@@ -63,9 +64,9 @@ export async function POST(request: Request) {
     await authorize(['OWNER', 'FINANCE']);
     const t = await request.json();
     await pool.query(
-      `INSERT INTO transactions (id, date, amount, type, category, description, account, image_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [t.id, t.date, t.amount, t.type, t.category || null, t.description, t.account, t.imageUrl || null]
+      `INSERT INTO transactions (id, date, amount, type, category, description, account, business_unit_id, image_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [t.id, t.date, t.amount, t.type, t.category || null, t.description, t.account, t.businessUnitId || null, t.imageUrl || null]
     );
     return NextResponse.json(t, { status: 201 });
   } catch (error) {
