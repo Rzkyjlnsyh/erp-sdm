@@ -284,3 +284,11 @@ export interface ChatMessage {
   senderName?: string; // Populated on fetch
   senderRole?: UserRole;
 }
+
+export interface TransactionCategory {
+  id: string;
+  name: string;
+  type: TransactionType;
+  parentId?: string | null;
+  subCategories?: TransactionCategory[]; // For UI tree structure
+}

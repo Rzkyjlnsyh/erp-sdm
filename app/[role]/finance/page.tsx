@@ -18,6 +18,12 @@ export default function FinancePage() {
       onAddAccount={store.addFinancialAccount}
       onUpdateAccount={store.updateFinancialAccount}
       onDeleteAccount={store.deleteFinancialAccount}
+      // Category Management
+      categories={store.categories || []}
+      onAddCategory={store.addCategory}
+      onUpdateCategory={store.updateCategory}
+      onDeleteCategory={store.deleteCategory}
+      
       toast={toast} 
       uploadFile={store.uploadFile} 
     />

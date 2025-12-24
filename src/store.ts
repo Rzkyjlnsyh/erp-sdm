@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { User, UserRole, Project, Attendance, LeaveRequest, Transaction, AppSettings, DailyReport, UserSalaryConfig, PayrollRecord, SystemLog, SystemActionType, FinancialAccountDef } from './types';
+import { TransactionCategory, User, UserRole, Project, Attendance, LeaveRequest, Transaction, AppSettings, DailyReport, UserSalaryConfig, PayrollRecord, SystemLog, SystemActionType, FinancialAccountDef } from './types';
 import { INITIAL_OFFICE_LOCATION } from './constants';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -24,6 +24,7 @@ interface AppState {
   settings: AppSettings;
   logs: SystemLog[];
   financialAccounts: FinancialAccountDef[];
+  categories: TransactionCategory[];
 }
 
 const initialState: AppState = {
@@ -40,6 +41,7 @@ const initialState: AppState = {
   payrollRecords: [],
   logs: [],
   financialAccounts: [],
+  categories: [],
   settings: {
     officeLocation: INITIAL_OFFICE_LOCATION,
     officeHours: { start: '08:00', end: '17:00' },
@@ -86,7 +88,20 @@ export const useStore = () => {
          setState(prev => ({ ...prev, currentUser, authToken: token }));
       }
 
-      // 2. Bootstrap Data (only after auth is settled)
+      // 2. Fetch Categories (Public or Protected, assuming user is logged in if calling bootstrap)
+      let initialCategories: TransactionCategory[] = [];
+      if (token) {
+        try {
+            const resCat = await fetch(`${API_BASE}/api/categories`, { 
+                headers: { 'Authorization': `Bearer ${token}` } 
+            });
+            if (resCat.ok) {
+                initialCategories = await resCat.json();
+            }
+        } catch (e) { console.error("Failed to load categories", e); }
+      }
+
+      // 3. Bootstrap Data (only after auth is settled)
       try {
         const res = await fetch(`${API_BASE}/api/bootstrap`, { cache: 'no-store' }); // Ensure fresh data
         if (!res.ok) throw new Error('Failed to load data from backend');
@@ -123,7 +138,8 @@ export const useStore = () => {
             payrollRecords: data.payrollRecords || [],
             logs: data.logs || [],
             settings: data.settings || prev.settings,
-            financialAccounts: data.financialAccounts || []
+            financialAccounts: data.financialAccounts || [],
+            categories: initialCategories
           };
         });
       } catch (e) {
@@ -702,6 +718,57 @@ export const useStore = () => {
       }
   };
 
+  const addCategory = async (cat: TransactionCategory) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/categories`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify(cat)
+        });
+        if (!res.ok) throw new Error('Failed to create category');
+        const created: TransactionCategory = await res.json();
+        setState(prev => ({ ...prev, categories: [...prev.categories, created] }));
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+  };
+
+  const updateCategory = async (cat: TransactionCategory) => {
+      setState(prev => ({
+          ...prev,
+          categories: prev.categories.map(c => c.id === cat.id ? cat : c)
+      }));
+      try {
+        const res = await fetch(`${API_BASE}/api/categories/${cat.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify(cat)
+        });
+        if (!res.ok) throw new Error('Failed to update category');
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+  };
+
+  const deleteCategory = async (id: string) => {
+      setState(prev => ({
+          ...prev,
+          categories: prev.categories.filter(c => c.id !== id && c.parentId !== id) // Remove category and its children from UI immediately
+      }));
+      try {
+        const res = await fetch(`${API_BASE}/api/categories/${id}`, {
+            method: 'DELETE',
+            headers: { ...authHeaders }
+        });
+        if (!res.ok) throw new Error('Failed to delete category');
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+  };
+
   const uploadFile = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -744,6 +811,9 @@ export const useStore = () => {
     addFinancialAccount,
     updateFinancialAccount,
     deleteFinancialAccount,
+    addCategory,
+    updateCategory,
+    deleteCategory,
     resetDevice,
     uploadFile,
     impersonate: (role: UserRole) => {

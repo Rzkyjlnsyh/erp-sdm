@@ -1,14 +1,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Transaction, TransactionType, FinancialAccountDef } from '../types';
+import { Transaction, TransactionType, FinancialAccountDef, TransactionCategory } from '../types';
 import { formatCurrency } from '../utils';
-import { Plus, TrendingUp, Landmark, PieChart, FileSpreadsheet, Wallet, Filter, Search, Image as ImageIcon, BookOpen, ChevronRight, Trash2, Edit, Calendar, RefreshCw, CreditCard } from 'lucide-react';
+import { Plus, TrendingUp, Landmark, PieChart, FileSpreadsheet, Wallet, Filter, Search, Image as ImageIcon, BookOpen, ChevronRight, Trash2, Edit, Calendar, RefreshCw, CreditCard, FolderTree, ArrowDown, ArrowUp, Folder } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useToast } from './Toast';
 
 interface FinanceProps {
   transactions: Transaction[]; // Fallback or Initial
   financialAccounts: FinancialAccountDef[];
+  categories: TransactionCategory[];
+  
   onAddTransaction: (t: Transaction) => Promise<void>;
   onUpdateTransaction: (t: Transaction) => Promise<void>;
   onDeleteTransaction: (id: string, detail: string) => Promise<void>;
@@ -18,6 +20,11 @@ interface FinanceProps {
   onUpdateAccount?: (acc: FinancialAccountDef) => Promise<void>;
   onDeleteAccount?: (id: string) => Promise<void>;
 
+  // Category Management Props
+  onAddCategory?: (cat: TransactionCategory) => Promise<void>;
+  onUpdateCategory?: (cat: TransactionCategory) => Promise<void>;
+  onDeleteCategory?: (id: string) => Promise<void>;
+
   toast: ReturnType<typeof useToast>;
   uploadFile?: (file: File) => Promise<string>;
 }
@@ -25,16 +32,20 @@ interface FinanceProps {
 const FinanceModule: React.FC<FinanceProps> = ({ 
   transactions: initialTransactions, 
   financialAccounts, 
+  categories,
   onAddTransaction, 
   onUpdateTransaction, 
   onDeleteTransaction, 
   onAddAccount,
   onUpdateAccount,
   onDeleteAccount,
+  onAddCategory,
+  onUpdateCategory,
+  onDeleteCategory,
   toast, 
   uploadFile 
 }) => {
-  const [activeTab, setActiveTab] = useState<'MUTASI' | 'BUKU_BESAR' | 'LAPORAN'>('MUTASI');
+  const [activeTab, setActiveTab] = useState<'MUTASI' | 'BUKU_BESAR' | 'LAPORAN' | 'KATEGORI'>('MUTASI');
   const [showAdd, setShowAdd] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   
@@ -79,10 +90,18 @@ const FinanceModule: React.FC<FinanceProps> = ({
       isActive: true
   });
 
+  // Category Form State
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryFormData, setCategoryFormData] = useState<Partial<TransactionCategory>>({
+      name: '',
+      type: TransactionType.OUT,
+      parentId: null
+  });
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([]); // Ids of expanded categories
+
   // Initial Load & Refresh
   const fetchData = async () => {
     setIsLoading(true);
-    // Get token from localStorage since we are in a client component and need to call API
     const token = typeof window !== 'undefined' ? localStorage.getItem('sdm_erp_auth_token') : null;
     const headers: Record<string, string> = {};
     if (token) {
@@ -90,7 +109,6 @@ const FinanceModule: React.FC<FinanceProps> = ({
     }
 
     try {
-      // 1. Fetch Summary
       const resSum = await fetch('/api/finance/summary', { headers });
       if (resSum.ok) {
         setSummary(await resSum.json());
@@ -98,13 +116,9 @@ const FinanceModule: React.FC<FinanceProps> = ({
          if (resSum.status === 401) toast.error("Sesi habis, silakan login ulang");
       }
 
-      // 2. Fetch Transactions for Period
-      // Calculate start and end date of selected month
-      // Note: we need to handle timezone correctly. Using YYYY-MM-DD string is safer.
       const year = selectedYear;
       const month = selectedMonth + 1; // 1-12
       const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
-      // Get last day of month
       const lastDay = new Date(year, month, 0).getDate();
       const endDate = `${year}-${month.toString().padStart(2, '0')}-${lastDay}`;
 
@@ -130,7 +144,6 @@ const FinanceModule: React.FC<FinanceProps> = ({
     if (financialAccounts.length > 0 && !ledgerAccount) {
       setLedgerAccount(financialAccounts[0].name);
     }
-    // Also default form account
     if (financialAccounts.length > 0 && !formData.account) {
       setFormData(prev => ({ ...prev, account: financialAccounts[0].name }));
     }
@@ -146,19 +159,15 @@ const FinanceModule: React.FC<FinanceProps> = ({
   const ledgerEntries = useMemo(() => {
     const accountTransactions = localTransactions
       .filter(t => t.account === ledgerAccount)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Ascending for calculation
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
 
     let runningBalance = 0; 
-    // Note: This running balance is only valid if we display ALL history or have opening balance.
-    // For now, since we filter by month, this is "Movement in this month".
-    // Improving UX: Show "N/A" for running balance if not exhaustive, or just show the flow.
-    // We will calculate it relative to 0 for this view.
     
     return accountTransactions.map(t => {
       if (t.type === TransactionType.IN) runningBalance += t.amount;
       else runningBalance -= t.amount;
       return { ...t, runningBalance };
-    }).reverse(); // Show newest first
+    }).reverse(); 
   }, [localTransactions, ledgerAccount]);
 
   const handleOpenAdd = () => {
@@ -260,19 +269,13 @@ const FinanceModule: React.FC<FinanceProps> = ({
 
   // --- ACCOUNT MANAGEMENT HANDLERS ---
   const openAddAccount = () => {
-      setAccountFormData({
-          name: '',
-          bankName: '',
-          accountNumber: '',
-          description: '',
-          isActive: true
-      });
+      setAccountFormData({ name: '', bankName: '', accountNumber: '', description: '', isActive: true });
       setIsEditingAccount(false);
       setShowAccountModal(true);
   };
 
   const openEditAccount = (acc: FinancialAccountDef, e: React.MouseEvent) => {
-      e.stopPropagation(); // Prevent card click
+      e.stopPropagation(); 
       setAccountFormData(acc);
       setIsEditingAccount(true);
       setShowAccountModal(true);
@@ -307,6 +310,45 @@ const FinanceModule: React.FC<FinanceProps> = ({
           } catch(e) {
               toast.error("Gagal menghapus rekening");
           }
+      }
+  };
+
+  // --- CATEGORY MANAGEMENT HANDLERS ---
+  const groupedCategories = useMemo(() => {
+    const income = categories.filter(c => c.type === TransactionType.IN && !c.parentId);
+    const expense = categories.filter(c => c.type === TransactionType.OUT && !c.parentId);
+    
+    // Helper to get children
+    const getChildren = (parentId: string) => categories.filter(c => c.parentId === parentId);
+
+    return {
+        IN: income.map(c => ({ ...c, children: getChildren(c.id) })),
+        OUT: expense.map(c => ({ ...c, children: getChildren(c.id) }))
+    };
+  }, [categories]);
+
+  const openAddCategory = (type: TransactionType, parentId: string | null = null) => {
+      setCategoryFormData({ name: '', type, parentId });
+      setShowCategoryModal(true);
+  };
+
+  const handleDeleteCategory = async (id: string, name: string) => {
+      if (confirm(`Hapus kategori "${name}"? Sub-kategori juga akan hilang.`)) {
+          if (onDeleteCategory) await onDeleteCategory(id);
+      }
+  }
+
+  const handleAddCategory = async () => {
+      if (!categoryFormData.name) {
+          toast.warning("Nama kategori wajib diisi");
+          return;
+      }
+      try {
+          if (onAddCategory) await onAddCategory(categoryFormData as any);
+          toast.success("Kategori ditambahkan");
+          setShowCategoryModal(false);
+      } catch (e) {
+          toast.error("Gagal menambah kategori");
       }
   };
 
@@ -345,7 +387,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
          </div>
       </div>
 
-      {/* Account Highlights (From Summary) */}
+      {/* Account Highlights */}
       <div className="flex overflow-x-auto pb-4 gap-4 snap-x custom-scrollbar">
         {financialAccounts.map(acc => {
           const bal = summary?.accountBalances[acc.name] || 0;
@@ -359,7 +401,6 @@ const FinanceModule: React.FC<FinanceProps> = ({
               }}
               className={`relative flex-shrink-0 w-64 snap-start p-6 rounded-[2.5rem] border-2 cursor-pointer transition-all duration-300 group ${isSelected ? 'bg-slate-900 border-slate-900 text-white shadow-2xl shadow-slate-200' : 'bg-white border-slate-100 hover:border-blue-200 hover:shadow-lg shadow-sm text-slate-800'}`}
             >
-              {/* Edit Account Button */}
               {onUpdateAccount && (
                   <button 
                     onClick={(e) => openEditAccount(acc, e)}
@@ -381,7 +422,6 @@ const FinanceModule: React.FC<FinanceProps> = ({
             </div>
           );
         })}
-        {/* Add Account Button */}
         {onAddAccount && (
             <button 
                 onClick={openAddAccount}
@@ -393,14 +433,15 @@ const FinanceModule: React.FC<FinanceProps> = ({
         )}
       </div>
 
-      {/* Tabs & Actions */}
+      {/* Tabs */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-end border-b-2 border-slate-100">
-        <div className="flex space-x-2">
-          <button onClick={() => setActiveTab('MUTASI')} className={`pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'MUTASI' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>MUTASI JURNAL</button>
-          <button onClick={() => setActiveTab('BUKU_BESAR')} className={`pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'BUKU_BESAR' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>BUKU BESAR</button>
-          <button onClick={() => setActiveTab('LAPORAN')} className={`pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'LAPORAN' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>LAPORAN PERIODE INI</button>
+        <div className="flex space-x-2 overflow-x-auto pb-1 custom-scrollbar w-full md:w-auto">
+          <button onClick={() => setActiveTab('MUTASI')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'MUTASI' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>MUTASI JURNAL</button>
+          <button onClick={() => setActiveTab('BUKU_BESAR')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'BUKU_BESAR' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>BUKU BESAR</button>
+          <button onClick={() => setActiveTab('LAPORAN')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'LAPORAN' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>LAPORAN PERIODE INI</button>
+          <button onClick={() => setActiveTab('KATEGORI')} className={`whitespace-nowrap pb-4 px-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'KATEGORI' ? 'text-slate-900 border-b-4 border-slate-900' : 'text-slate-400 hover:text-slate-600'}`}>MANAJEMEN KATEGORI</button>
         </div>
-        <div className="flex items-center space-x-3 mb-4">
+        <div className="flex items-center space-x-3 mb-4 flex-shrink-0">
           <div className="bg-slate-900 text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center shadow-xl shadow-slate-100 italic">
             <Wallet size={14} className="mr-2 text-blue-400" /> TOTAL ASSETS: <span className="ml-2">{formatCurrency(summary?.totalAssets || 0)}</span>
           </div>
@@ -486,7 +527,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
         </div>
       )}
 
-      {/* CONTENT: BUKU BESAR */}
+      {/* CONTENT: BUKU BESAR & LAPORAN - NO CHANGES (KEPT SAME LOGIC) */}
       {activeTab === 'BUKU_BESAR' && (
         <div className="space-y-6 animate-in slide-in-from-bottom-6 duration-500">
            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -558,7 +599,6 @@ const FinanceModule: React.FC<FinanceProps> = ({
         </div>
       )}
 
-      {/* CONTENT: LAPORAN */}
       {activeTab === 'LAPORAN' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in zoom-in duration-500">
            <div className="bg-white p-12 rounded-[3.5rem] shadow-xl border border-slate-100 space-y-10">
@@ -625,14 +665,93 @@ const FinanceModule: React.FC<FinanceProps> = ({
         </div>
       )}
 
-      {/* Modal: Form Transaction */}
+      {/* CONTENT: MANAJEMEN KATEGORI */}
+      {activeTab === 'KATEGORI' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in zoom-in duration-500">
+             {/* Income Categories */}
+             <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 flex flex-col h-full">
+                <div className="flex justify-between items-center mb-8 pb-6 border-b border-slate-100">
+                   <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><ArrowDown size={20} /></div>
+                      <div>
+                          <h4 className="text-xl font-black text-slate-800 uppercase italic">Kategori Pemasukan</h4>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">INCOME STREAMS</p>
+                      </div>
+                   </div>
+                   <button onClick={() => openAddCategory(TransactionType.IN)} className="p-3 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-500 hover:text-white transition"><Plus size={16} /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+                   {groupedCategories.IN.length === 0 && <p className="text-center text-slate-400 text-xs italic py-10">Belum ada kategori</p>}
+                   {groupedCategories.IN.map(c => (
+                       <div key={c.id} className="space-y-2">
+                           <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl group hover:bg-white hover:shadow-lg transition border border-slate-100">
+                               <span className="text-xs font-black uppercase text-slate-700">{c.name}</span>
+                               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                                   <button onClick={() => openAddCategory(TransactionType.IN, c.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg" title="Tambah Sub"><Plus size={14}/></button>
+                                   <button onClick={() => handleDeleteCategory(c.id, c.name)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 size={14}/></button>
+                               </div>
+                           </div>
+                           {/* Sub Categories */}
+                           <div className="pl-6 space-y-2 border-l-2 border-slate-100 ml-4">
+                               {c.children?.map(child => (
+                                   <div key={child.id} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-xl">
+                                      <span className="text-[10px] font-bold text-slate-500">{child.name}</span>
+                                      <button onClick={() => handleDeleteCategory(child.id, child.name)} className="p-1.5 text-rose-400 hover:bg-rose-50 rounded-lg"><Trash2 size={12}/></button>
+                                   </div>
+                               ))}
+                           </div>
+                       </div>
+                   ))}
+                </div>
+             </div>
+
+             {/* Expense Categories */}
+             <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 flex flex-col h-full">
+                <div className="flex justify-between items-center mb-8 pb-6 border-b border-slate-100">
+                   <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center"><ArrowUp size={20} /></div>
+                      <div>
+                          <h4 className="text-xl font-black text-slate-800 uppercase italic">Kategori Pengeluaran</h4>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">EXPENSE POSTS</p>
+                      </div>
+                   </div>
+                   <button onClick={() => openAddCategory(TransactionType.OUT)} className="p-3 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-500 hover:text-white transition"><Plus size={16} /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+                   {groupedCategories.OUT.length === 0 && <p className="text-center text-slate-400 text-xs italic py-10">Belum ada kategori</p>}
+                   {groupedCategories.OUT.map(c => (
+                       <div key={c.id} className="space-y-2">
+                           <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl group hover:bg-white hover:shadow-lg transition border border-slate-100">
+                               <span className="text-xs font-black uppercase text-slate-700">{c.name}</span>
+                               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                                   <button onClick={() => openAddCategory(TransactionType.OUT, c.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg" title="Tambah Sub"><Plus size={14}/></button>
+                                   <button onClick={() => handleDeleteCategory(c.id, c.name)} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg"><Trash2 size={14}/></button>
+                               </div>
+                           </div>
+                           {/* Sub Categories */}
+                           <div className="pl-6 space-y-2 border-l-2 border-slate-100 ml-4">
+                               {c.children?.map(child => (
+                                   <div key={child.id} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-xl">
+                                      <span className="text-[10px] font-bold text-slate-500">{child.name}</span>
+                                      <button onClick={() => handleDeleteCategory(child.id, child.name)} className="p-1.5 text-rose-400 hover:bg-rose-50 rounded-lg"><Trash2 size={12}/></button>
+                                   </div>
+                               ))}
+                           </div>
+                       </div>
+                   ))}
+                </div>
+             </div>
+          </div>
+      )}
+
+      {/* Modal: Form Transaction - UPDATED WITH DYNAMIC CATEGORIES */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
            <div className="bg-white rounded-[3.5rem] w-full max-w-2xl p-12 shadow-2xl border border-white/20 animate-in zoom-in duration-300 overflow-y-auto max-h-[90vh]">
              <div className="flex justify-between items-center mb-10">
                <div>
                   <h3 className="text-3xl font-black text-slate-800 leading-tight italic uppercase tracking-tighter">{isEditing ? 'Edit Transaksi' : 'Input Transaksi'}</h3>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">ENTRY DATA PEMBUKUAN RESMI</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">{formData.type === TransactionType.IN ? 'DANA MASUK (IN)' : 'DANA KELUAR (OUT)'}</p>
                </div>
                <button onClick={() => setShowAdd(false)} className="p-4 bg-slate-100 rounded-2xl text-slate-400 hover:text-rose-500 transition">✕</button>
              </div>
@@ -640,11 +759,11 @@ const FinanceModule: React.FC<FinanceProps> = ({
              <div className="space-y-8">
                <div className="flex bg-slate-50 p-2 rounded-[1.5rem] border border-slate-100">
                   <button 
-                    onClick={() => setFormData({...formData, type: TransactionType.IN})}
+                    onClick={() => setFormData({...formData, type: TransactionType.IN, category: ''})}
                     className={`flex-1 py-4 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${formData.type === TransactionType.IN ? 'bg-slate-900 shadow-xl text-emerald-400' : 'text-slate-400'}`}
                   >DANA MASUK (IN)</button>
                   <button 
-                    onClick={() => setFormData({...formData, type: TransactionType.OUT})}
+                    onClick={() => setFormData({...formData, type: TransactionType.OUT, category: ''})}
                     className={`flex-1 py-4 text-xs font-black uppercase tracking-widest rounded-2xl transition-all ${formData.type === TransactionType.OUT ? 'bg-slate-900 shadow-xl text-rose-500' : 'text-slate-400'}`}
                   >DANA KELUAR (OUT)</button>
                </div>
@@ -681,14 +800,25 @@ const FinanceModule: React.FC<FinanceProps> = ({
                       value={formData.category}
                       onChange={e => setFormData({...formData, category: e.target.value})}
                     >
-                      <option value="">Pilih Kategori</option>
-                      <option value="PROJECT">PROJECT CLIENT</option>
-                      <option value="OPERATIONAL">BIAYA OPERASIONAL</option>
-                      <option value="SALARY">PAYROLL / GAJI</option>
-                      <option value="MARKETING">ADVERTISING & MARKETING</option>
-                      <option value="EQUIPMENT">CAPEX / PERALATAN</option>
-                      <option value="TAX">PAJAK PERUSAHAAN</option>
-                      <option value="OTHER">LAIN - LAIN</option>
+                      <option value="">-- Pilih Kategori --</option>
+                      { (formData.type === TransactionType.IN ? groupedCategories.IN : groupedCategories.OUT).map(cat => (
+                          <optgroup key={cat.id} label={cat.name}>
+                              {/* Parent itself can be selectable if desired, but usually sub is better if exists. Let's allow parent if no subs, or just list subs */}
+                              {/* Logic: if has children, only show children. If no children, show parent option? Or always show parent? 
+                                  User requested: "Bedakan kategori dengan aliran... dropdown grouped"
+                                  Let's make Parent selectable too? Or just Label?
+                                  Usually only leaves are selectable. We'll show children. If no children, show parent as option.
+                              */}
+                              {cat.children && cat.children.length > 0 ? (
+                                  cat.children.map(child => (
+                                      <option key={child.id} value={child.name}>{child.name}</option>
+                                  ))
+                              ) : (
+                                  <option value={cat.name}>{cat.name}</option>
+                              )}
+                          </optgroup>
+                      ))}
+                      {/* Fallback for empty categories or old hardcoded ones if needed? No, we stick to DB now. */}
                     </select>
                  </div>
                </div>
@@ -737,7 +867,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
                <div className="flex justify-between items-center mb-10">
                  <div>
                     <h3 className="text-2xl font-black text-slate-800 leading-tight italic uppercase tracking-tighter">{isEditingAccount ? 'Edit Rekening' : 'Tambah Rekening'}</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">DATA AKUN KEUANGAN</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">{isEditingAccount ? 'PERBARUI DATA' : 'BUAT BARU'}</p>
                  </div>
                  <button onClick={() => setShowAccountModal(false)} className="p-4 bg-slate-100 rounded-2xl text-slate-400 hover:text-rose-500 transition">✕</button>
                </div>
@@ -796,6 +926,40 @@ const FinanceModule: React.FC<FinanceProps> = ({
                              Simpan Data
                         </button>
                    </div>
+               </div>
+            </div>
+          </div>
+      )}
+
+      {/* Modal: Form Category */}
+      {showCategoryModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[3.5rem] w-full max-w-md p-10 shadow-2xl border border-white/20 animate-in zoom-in duration-300">
+               <div className="flex justify-between items-center mb-8">
+                 <div>
+                    <h3 className="text-2xl font-black text-slate-800 leading-tight italic uppercase tracking-tighter">Tambah Kategori</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                        {categoryFormData.parentId ? 'SUB CATEGORY' : 'MAIN CATEGORY'} - {categoryFormData.type === TransactionType.IN ? 'INCOME' : 'EXPENSE'}
+                    </p>
+                 </div>
+                 <button onClick={() => setShowCategoryModal(false)} className="p-4 bg-slate-100 rounded-2xl text-slate-400 hover:text-rose-500 transition">✕</button>
+               </div>
+               
+               <div className="space-y-6">
+                   <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NAMA KATEGORI</label>
+                      <input 
+                        className="w-full p-5 bg-slate-50 border-2 border-transparent rounded-[1.5rem] text-xs font-bold outline-none focus:border-blue-600 focus:bg-white transition shadow-sm"
+                        placeholder="Contoh: Listrik, Gaji, Bonus..."
+                        value={categoryFormData.name}
+                        onChange={e => setCategoryFormData({...categoryFormData, name: e.target.value})}
+                        autoFocus
+                      />
+                   </div>
+                   
+                   <button onClick={handleAddCategory} className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] hover:bg-blue-600 transition text-[10px] shadow-xl mt-4">
+                        Simpan Kategori
+                   </button>
                </div>
             </div>
           </div>
