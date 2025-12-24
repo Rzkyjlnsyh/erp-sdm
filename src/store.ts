@@ -500,21 +500,35 @@ export const useStore = () => {
   };
 
   const updateRequest = async (req: LeaveRequest) => {
+    // 1. Optimistic Update (Immediate UI Change)
+    setState(prev => ({
+      ...prev,
+      requests: prev.requests.map(r => r.id === req.id ? req : r)
+    }));
+
     try {
       const res = await fetch(`${API_BASE}/api/requests/${req.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(req)
       });
-      if (!res.ok) throw new Error('Failed to update request');
+      
+      if (!res.ok) {
+        throw new Error('Failed to update request');
+      }
+      
       const updated: LeaveRequest = await res.json();
+      
+      // 2. Re-sync with server response (in case server added more fields like createdAt timestamp adjustment)
       setState(prev => ({
         ...prev,
         requests: prev.requests.map(r => r.id === updated.id ? updated : r)
       }));
+      
       addLog(SystemActionType.REQUEST_APPROVE, `Request ${updated.status}: ${updated.type}`, updated.id);
     } catch (e) {
       console.error(e);
+      // Rollback or notify error (optional, but keep simple for now)
     }
   };
 

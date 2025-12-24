@@ -114,9 +114,10 @@ const RequestsModule: React.FC<RequestsProps> = ({ currentUser, users, requests,
         actionAt: Date.now()
       });
       toast.success(`Permohonan ${status === RequestStatus.APPROVED ? 'DISETUJUI' : 'DITOLAK'}`);
-      setSelectedRequest(null); 
+      setSelectedRequest(null); // Close modal immediately
     } catch (err: any) {
-      toast.error("Gagal memproses aksi.");
+      console.error(err);
+      toast.error("Gagal memproses aksi. Coba refresh halaman.");
     }
   };
 
