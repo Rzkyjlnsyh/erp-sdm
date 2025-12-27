@@ -23,6 +23,7 @@ export default function FinancePage() {
       onAddCategory={store.addCategory}
       onUpdateCategory={store.updateCategory}
       onDeleteCategory={store.deleteCategory}
+      importCategories={store.importCategories}
 
       // Business Unit Management
       businessUnits={store.businessUnits || []}

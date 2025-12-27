@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { read, utils, writeFile } from 'xlsx';
 import { Transaction, TransactionType, FinancialAccountDef, TransactionCategory, BusinessUnit } from '../types';
 import { formatCurrency } from '../utils';
 import { Plus, TrendingUp, Landmark, PieChart, FileSpreadsheet, Wallet, Filter, Search, Image as ImageIcon, BookOpen, ChevronRight, Trash2, Edit, Calendar, RefreshCw, CreditCard, FolderTree, ArrowDown, ArrowUp, Folder, Building2, LayoutGrid } from 'lucide-react';
@@ -24,6 +25,7 @@ interface FinanceProps {
   onAddCategory?: (cat: TransactionCategory) => Promise<void>;
   onUpdateCategory?: (cat: TransactionCategory) => Promise<void>;
   onDeleteCategory?: (id: string) => Promise<void>;
+  importCategories?: (cats: Partial<TransactionCategory>[]) => Promise<void>;
 
   // Business Unit Props
   businessUnits: BusinessUnit[];
@@ -48,6 +50,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
   onAddCategory,
   onUpdateCategory,
   onDeleteCategory,
+  importCategories,
   businessUnits,
   onAddBusinessUnit,
   onUpdateBusinessUnit,
@@ -381,6 +384,73 @@ const FinanceModule: React.FC<FinanceProps> = ({
       } catch (e) {
           toast.error("Gagal menambah kategori");
       }
+  };
+
+  const handleDownloadTemplate = () => {
+      const headers = ["Name", "Type", "Parent"];
+      const data = [
+          { Name: "Contoh: Gaji Pokok", Type: "OUT", Parent: "Gaji & Tunjangan" },
+          { Name: "Contoh: Penjualan Produk", Type: "IN", Parent: "" },
+          { Name: "Contoh: Listrik & Air", Type: "OUT", Parent: "Operasional Kantor" },
+      ];
+
+      const ws = utils.json_to_sheet(data, { header: headers });
+      
+      // Auto-width adjustment for better UX
+      const wscols = [
+          { wch: 30 }, // Name
+          { wch: 10 }, // Type
+          { wch: 30 }, // Parent
+      ];
+      ws['!cols'] = wscols;
+
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, "Template Kategori");
+      
+      writeFile(wb, "Template_Import_Kategori.xlsx");
+      toast.success("Template berhasil didownload");
+  };
+
+  const handleImportCategory = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+          const data = await file.arrayBuffer();
+          const workbook = read(data);
+          const sheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData = utils.sheet_to_json(sheet);
+          
+          // Validate and Format
+          const categoriesToImport: any[] = jsonData.map((row: any) => {
+             const typeStr = (row['Type'] || row['Tipe'] || '').toString().toUpperCase();
+             const type = typeStr.includes('IN') || typeStr.includes('MASUK') ? TransactionType.IN : TransactionType.OUT;
+             
+             return {
+                 name: row['Name'] || row['Nama'],
+                 type: type,
+                 parentName: row['Parent'] || row['Induk'] || null
+             };
+          }).filter(c => c.name); // Filter empty names
+
+          if (categoriesToImport.length === 0) {
+             toast.warning("Tidak ada data kategori yang valid dalam file (Pastikan kolom Name/Nama ada)");
+             return;
+          }
+
+          if (importCategories) {
+              toast.info(`Mengimport ${categoriesToImport.length} kategori...`);
+              await importCategories(categoriesToImport);
+              toast.success("Import berhasil!");
+          }
+      } catch (err) {
+          console.error(err);
+          toast.error("Gagal memproses file import");
+      }
+      
+      // Reset input
+      e.target.value = '';
   };
 
   // --- BUSINESS UNIT MANAGMENT HANDLERS ---
@@ -761,7 +831,29 @@ const FinanceModule: React.FC<FinanceProps> = ({
 
       {/* CONTENT: MANAJEMEN KATEGORI */}
       {activeTab === 'KATEGORI' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in zoom-in duration-500">
+          <div className="space-y-6 animate-in zoom-in duration-500">
+             <div className="flex justify-between items-center bg-blue-50/50 p-4 rounded-[2rem] border border-blue-100">
+                <div className="flex items-center gap-3 px-2">
+                    <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><FolderTree size={20}/></div>
+                    <div>
+                        <h4 className="text-sm font-black text-slate-800 uppercase italic">Structure Management</h4>
+                        <p className="text-[9px] font-bold text-slate-400">ATUR HIERARKI KATEGORI PEMASUKAN & PENGELUARAN</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button onClick={handleDownloadTemplate} className="px-4 py-3 bg-white text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition border border-slate-200 shadow-sm flex items-center gap-2">
+                        <FileSpreadsheet size={16} className="text-slate-400" />
+                        Download Template
+                    </button>
+                    <label className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest cursor-pointer hover:bg-slate-800 transition shadow-xl hover:shadow-2xl hover:-translate-y-1 transform">
+                        <FileSpreadsheet size={16} className="text-emerald-400" />
+                        Import Excel
+                        <input type="file" accept=".xlsx, .xls, .csv" className="hidden" onChange={handleImportCategory} />
+                    </label>
+                </div>
+             </div>
+
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
              {/* Income Categories */}
              <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 flex flex-col h-full">
                 <div className="flex justify-between items-center mb-8 pb-6 border-b border-slate-100">
@@ -834,6 +926,7 @@ const FinanceModule: React.FC<FinanceProps> = ({
                        </div>
                    ))}
                 </div>
+             </div>
              </div>
           </div>
       )}

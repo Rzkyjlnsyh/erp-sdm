@@ -171,55 +171,15 @@ export const useStore = () => {
 
     initializeApp();
     
-    // Polling System: Refresh vital shared data (Users list) every 30 seconds
-    // This allows changes like Avatar updates to propagate to other online users
+    // Polling System REMOVED for Performance
+    // Previously, this polled /api/bootstrap every 30s, causing massive server load.
+    // We now rely on initial load + Supabase Realtime (for projects) + manual refresh.
+    // If specific data needs live updates (like Users), implement a dedicated lightweight endpoint or Realtime channel.
+    /*
     const pollInterval = setInterval(async () => {
-        try {
-            // We can re-use the bootstrap endpoint or specific endpoints.
-            // Using bootstrap is heavy but guarantees sync. Ideally we'd have a lighter /api/users endpoint.
-            // Let's assume we can fetch just users if we had an endpoint, but for now let's just re-fetch bootstrap silently
-            // OR better: Create a specific logic if token exists.
-            
-            // To avoid complexity, we rely on the fact that 'users' are loaded in bootstrap.
-            // Let's implement a lightweight user sync if token exists.
-            const token = typeof window !== 'undefined' ? window.localStorage.getItem(CURRENT_TOKEN_KEY) : null;
-            if (!token) return;
-
-            const res = await fetch(`${API_BASE}/api/bootstrap`, { 
-                headers: { Authorization: `Bearer ${token}` },
-                cache: 'no-store' 
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setState(prev => {
-                    const newUsers = data.users || prev.users;
-                    // If current user is in the new list, update them too to reflect changes (like Avatar) immediately in UI
-                    let newCurrentUser = prev.currentUser;
-                    if (prev.currentUser) {
-                        const foundMe = newUsers.find((u: User) => u.id === prev.currentUser!.id);
-                        if (foundMe) {
-                             newCurrentUser = { ...prev.currentUser, ...foundMe };
-                             // Also update storage to keep it fresh across reloads
-                             try {
-                                if (typeof window !== 'undefined') {
-                                    window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newCurrentUser));
-                                }
-                             } catch(e) {}
-                        }
-                    }
-
-                    return {
-                        ...prev,
-                        users: newUsers, // Sync Users
-                        currentUser: newCurrentUser,
-                        projects: data.projects || prev.projects, // Sync Kanban
-                    };
-                });
-            }
-        } catch (e) {
-            console.error("Background sync failed", e);
-        }
-    }, 30000); // 30 Seconds
+         // ... code removed ...
+    }, 30000);
+    */
 
     // Realtime Subscription (Supabase)
     let channel: any;
@@ -289,7 +249,7 @@ export const useStore = () => {
     }
 
     return () => {
-        clearInterval(pollInterval);
+        // clearInterval(pollInterval);
         if (channel) supabase?.removeChannel(channel);
     };
   }, []);
@@ -859,6 +819,29 @@ export const useStore = () => {
       }
   };
 
+  const importCategories = async (cats: Partial<TransactionCategory>[]) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/categories/import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify({ categories: cats })
+        });
+        if (!res.ok) throw new Error('Failed to import categories');
+        
+        // Refresh categories
+        const resCat = await fetch(`${API_BASE}/api/categories`, { headers: authHeaders });
+        if (resCat.ok) {
+            const allCats = await resCat.json();
+            setState(prev => ({ ...prev, categories: allCats }));
+        }
+        
+        addLog(SystemActionType.FINANCE_UPDATE, `Imported ${cats.length} categories`, 'Categories');
+      } catch (e) {
+        console.error(e);
+        throw e;
+      }
+  };
+
   const addBusinessUnit = async (unit: BusinessUnit) => {
       try {
         const res = await fetch(`${API_BASE}/api/business-units`, {
@@ -1012,6 +995,7 @@ export const useStore = () => {
     addCategory,
     updateCategory,
     deleteCategory,
+    importCategories,
     addBusinessUnit,
     updateBusinessUnit,
     deleteBusinessUnit,
