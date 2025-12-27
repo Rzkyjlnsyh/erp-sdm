@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
@@ -6,13 +7,17 @@ export const revalidate = 0;
 
 export async function GET(request: Request) {
   try {
-    // 1. Get Settings
     const res = await pool.query('SELECT * FROM settings LIMIT 1');
     if (!res.rows.length) {
       return NextResponse.json({ error: 'Settings not initialized' }, { status: 400 });
     }
     const settings = res.rows[0];
     
+    // Check if configuration exists
+    if (!settings.telegram_bot_token || !settings.telegram_owner_chat_id) {
+        return NextResponse.json({ error: 'Telegram settings missing' }, { status: 500 });
+    }
+
     const targetTime = settings.daily_recap_time || '18:00'; // HH:mm
     let targetModules: string[] = [];
     try {
@@ -23,23 +28,17 @@ export async function GET(request: Request) {
         targetModules = [];
     }
     
-    // 2. Check Time (WIB)
     const now = new Date();
-    // Convert to WIB (UTC+7)
     const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
     const wibDate = new Date(utc + (3600000 * 7));
-    const currentHHMM = wibDate.toISOString().slice(11, 16); // HH:mm
-    const dateStr = wibDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const currentHHMM = wibDate.toISOString().slice(11, 16); 
+    const dateStr = wibDate.toISOString().split('T')[0]; 
 
-    // URL Param Check
     const url = new URL(request.url);
     const isForce = url.searchParams.get('force') === 'true';
 
     console.log(`[Cron] Check. WIB: ${currentHHMM}, Target: ${targetTime}, Date: ${dateStr}`);
 
-    // LOGIC: If Current Time < Target Time, WE WAIT (unless force).
-    // If Current Time >= Target Time, WE CHECK "Did we already send today?".
-    
     if (currentHHMM < targetTime && !isForce) {
          return NextResponse.json({ 
           skipped: true, 
@@ -49,7 +48,6 @@ export async function GET(request: Request) {
       });
     }
 
-    // 3. IDEMPOTENCY CHECK (Cek biar gak kirim dobel hari ini)
     if (!isForce) {
         const logCheck = await pool.query(`
             SELECT id FROM system_logs 
@@ -67,11 +65,9 @@ export async function GET(request: Request) {
         }
     }
 
-    // 4. Generate Report
     let message = `🔔 *LAPORAN HARIAN OWNER* 🔔\n📅 ${dateStr}\n\n`;
     let hasContent = false;
 
-    // -- MODULE: FINANCE (OMSET) --
     if (targetModules.includes('omset')) {
        const resFin = await pool.query(`
           SELECT 
@@ -85,7 +81,6 @@ export async function GET(request: Request) {
        hasContent = true;
     }
 
-    // -- MODULE: ATTENDANCE --
     if (targetModules.includes('attendance')) {
        const resAtt = await pool.query(`
           SELECT 
@@ -100,7 +95,6 @@ export async function GET(request: Request) {
        hasContent = true;
     }
 
-    // -- MODULE: REQUESTS (IZIN/CUTI) --
     if (targetModules.includes('requests')) {
         const resReq = await pool.query(`
            SELECT type, COUNT(*) as count 
@@ -123,7 +117,6 @@ export async function GET(request: Request) {
         hasContent = true;
     }
 
-    // -- MODULE: PROJECTS --
     if (targetModules.includes('projects')) {
         const resProj = await pool.query(`
            SELECT status, COUNT(*) as count 
@@ -142,40 +135,80 @@ export async function GET(request: Request) {
 
     if (!hasContent) message += "_Tidak ada modul laporan yang dipilih._";
 
-    // 5. Send to Telegram
-    const chatId = settings.telegram_owner_chat_id;
-    const token = settings.telegram_bot_token;
-
-    if (!chatId || !token) {
-        return NextResponse.json({ error: 'Missing Telegram Configuration' }, { status: 500 });
-    }
-
-    const teleRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'Markdown' })
-    });
-
-    const teleData = await teleRes.json();
+    // Use internal Smart Transporter (re-use the logic we just fixed!)
+    // Instead of raw fetch to telegram.org, we can call our own internal API helpers or just copy the logic.
+    // Copying logic is safer for Cron as it runs server-side locally.
     
-    if (!teleData.ok) {
-        return NextResponse.json({ error: 'Failed to send to Telegram', details: teleData }, { status: 500 });
-    }
+    // --- SMART SEND LOGIC (COPIED FROM Transporter) ---
+    const sendSmart = async (chatId: string, text: string) => {
+        const token = settings.telegram_bot_token;
+        let actualChatId = chatId;
+        let messageThreadId: number | undefined = undefined;
 
-    // 6. LOG SUCCESS (Important for Idempotency)
+        if (String(chatId).includes('_')) {
+            const parts = String(chatId).split('_');
+            actualChatId = parts[0]; 
+            if (!isNaN(Number(parts[1]))) messageThreadId = parseInt(parts[1]);
+        } 
+        
+        let telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+        let body: any = { chat_id: actualChatId, text: text, parse_mode: 'Markdown' }; 
+        // Note: Markdown vs HTML. Original cron used Markdown. New transporter used HTML.
+        // Let's stick to Markdown for Cron as the message is formatted with *bold*.
+        
+        if (messageThreadId) body.message_thread_id = messageThreadId;
+
+        console.log(`[Cron Transporter] Sending to ${actualChatId} Thread ${messageThreadId}`);
+
+        let response = await fetch(telegramUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            const errDesc = data.description || '';
+            
+            // Retry 1: Prefix Fix
+            if (errDesc.includes('chat not found')) {
+                 let retryId = actualChatId;
+                 if (String(actualChatId).startsWith('-100')) {
+                     retryId = String(actualChatId).replace('-100', '-');
+                     if (retryId.startsWith('--')) retryId = retryId.replace('--', '-');
+                 } else if (String(actualChatId).startsWith('-')) {
+                     retryId = '-100' + String(actualChatId).substring(1); 
+                 } else {
+                     retryId = '-100' + actualChatId;
+                 }
+                 body.chat_id = retryId;
+                 const r2 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+                 if (r2.ok) return { success: true };
+            }
+            
+            // Retry 2: Thread Fix (Fall to General)
+            if (errDesc.includes('thread not found') || (data.description && data.description.includes('thread not found'))) {
+                 delete body.message_thread_id;
+                 const r3 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+                 if (r3.ok) return { success: true };
+            }
+            
+            throw new Error(errDesc);
+        }
+        return { success: true };
+    };
+
+    await sendSmart(settings.telegram_owner_chat_id, message);
+
+    // 6. LOG SUCCESS
     if (!isForce) {
         await pool.query(`
             INSERT INTO system_logs (id, timestamp, actor_id, actor_name, actor_role, action_type, details, target_obj)
             VALUES ($1, $2, $3, 'SYSTEM CRON', 'SYSTEM', 'DAILY_RECAP_AUTO', $4, 'Telegram')
-        `, [
-            `log_${Date.now()}`, 
-            Date.now(), 
-            'system', 
-            `Laporan Harian sent for ${dateStr}`
-        ]);
+        `, [`log_${Date.now()}`, Date.now(), 'system', `Laporan Harian sent for ${dateStr}`]);
     }
 
-    return NextResponse.json({ success: true, recipient: chatId, time: currentHHMM });
+    return NextResponse.json({ success: true, recipient: settings.telegram_owner_chat_id, time: currentHHMM });
 
   } catch (error: any) {
     console.error('[Cron] Error:', error);
