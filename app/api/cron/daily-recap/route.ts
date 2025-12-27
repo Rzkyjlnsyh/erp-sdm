@@ -15,29 +15,7 @@ export async function GET(request: Request) {
     
     // Check if configuration exists
     if (!settings.telegram_bot_token || !settings.telegram_owner_chat_id) {
-        // EMERGENCY SELF-HEALING: Inject Token directly if missing
-        console.log("[Cron] Settings missing. Attempting self-healing injection...");
-        const HardToken = '6991930039:AAGq2NvJeM2OvgUjnz5Y5glpe0YrJVJer6w';
-        const HardChatId = '6524940813'; // Default to your personal ID temporary
-        
-        // Try Update
-        await pool.query(`UPDATE settings SET telegram_bot_token=$1, telegram_owner_chat_id=$2`, [HardToken, HardChatId]);
-        
-        // Try Insert if update affected 0 rows (table empty)
-        const check = await pool.query('SELECT * FROM settings LIMIT 1');
-        if (!check.rows.length) {
-             await pool.query(`INSERT INTO settings (telegram_bot_token, telegram_owner_chat_id) VALUES ($1, $2)`, [HardToken, HardChatId]);
-        }
-        
-        // Re-fetch
-        const reload = await pool.query('SELECT * FROM settings LIMIT 1');
-        if (reload.rows.length) {
-            settings.telegram_bot_token = reload.rows[0].telegram_bot_token;
-            settings.telegram_owner_chat_id = reload.rows[0].telegram_owner_chat_id;
-            console.log("[Cron] Self-healing success. Settings injected.");
-        } else {
-             return NextResponse.json({ error: 'Telegram settings missing (Self-healing failed)' }, { status: 500 });
-        }
+        return NextResponse.json({ error: 'Telegram settings missing' }, { status: 500 });
     }
 
     const targetTime = settings.daily_recap_time || '18:00'; // HH:mm
@@ -104,14 +82,23 @@ export async function GET(request: Request) {
     }
 
     if (targetModules.includes('attendance')) {
+       console.log(`[Cron] Querying attendance for date: ${dateStr}`);
+       // Robust query handling both boolean and smallint (0/1) for is_late
+       // Also ensures we count correct rows
        const resAtt = await pool.query(`
           SELECT 
              COUNT(*) FILTER (WHERE time_in IS NOT NULL) as present,
-             COUNT(*) FILTER (WHERE CAST(is_late AS TEXT) = 'true' OR CAST(is_late AS TEXT) = '1') as late
+             COUNT(*) FILTER (WHERE 
+                (is_late IS TRUE) OR 
+                (is_late::text = '1') OR
+                (is_late::text = 'true')
+             ) as late,
+             COUNT(*)Total
           FROM attendance 
           WHERE date = $1
        `, [dateStr]);
        
+       console.log(`[Cron] Attendance Result:`, resAtt.rows[0]);
        const { present, late } = resAtt.rows[0];
        message += `👥 *ABSENSI KARYAWAN*\n✅ Hadir: ${present} orang\n⚠️ Terlambat: ${late} orang\n\n`;
        hasContent = true;
