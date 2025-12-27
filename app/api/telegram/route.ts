@@ -27,36 +27,16 @@ export async function POST(request: Request) {
     // Handle standard thread format: ID_THREADID
     if (String(chatId).includes('_')) {
         const parts = String(chatId).split('_');
-        
-        // --- FIX LOGIC HERE ---
-        // Jika input sudah negatif (misal -238...), kita harus hati-hati.
-        // Telegram ID Supergroup biasanya -100 + ID.
-        // Kasus USER: -2383546842_1
-        // Jika kita paksa tambah -100 jadi -100-238... SALAH.
-        // Jika ID awalannya sudah negatif, kita cek apakah itu "kurang -100" atau memang ID basic group.
-        
-        let baseId = parts[0];
-        
-        // CASE A: User input "-238..." (ID Group biasa, atau ID Supergroup yang belum lengkap?)
-        // Biasanya Supergroup ID itu panjang (13 digit). Group biasa pendek (9-10 digit).
-        // -2383546842 (10 digit) -> Kemungkinan besar BASIC GROUP (yang lama/migrasi) atau USER SALAH INPUT (kurang -100).
-        
-        // Logika Retry Otomatis adalah KUNCI.
-        // Strategi: 
-        // 1. Coba RAW dulu (apa adanya).
-        // 2. Jika gagal "Chat Not Found", coba tambah "-100" (tapi handle minus ganda).
-        
-        actualChatId = baseId; 
+        actualChatId = parts[0]; 
         
         if (!isNaN(Number(parts[1]))) {
             messageThreadId = parseInt(parts[1]);
         }
     } else {
-         // Normal Without Thread
          actualChatId = chatId;
     }
 
-    console.log(`[API Transporter] Cleaned: ${actualChatId} Thread: ${messageThreadId}`);
+    console.log(`[API Transporter] Raw: ${actualChatId} Thread: ${messageThreadId}`);
 
     // 3. Send Message (ATTEMPT 1: AS IS)
     let telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
@@ -74,39 +54,30 @@ export async function POST(request: Request) {
     });
     let data = await response.json();
 
-    // 4. ERROR HANDLING & INTELLIGENT RETRY
+    // 4. ERROR HANDLING & INTELLIGENT RETRY CHAINS
     if (!response.ok) {
-        console.error("[API Transporter] Attempt 1 Failed:", data);
-        
+        console.error("[API Failed 1]", data);
         const errDesc = data.description || '';
 
-        // SCENARIO 1: "Chat not found"
-        // Kemungkinan:
-        // A. ID kurang "-100" (Supergroup)
-        // B. ID kebanyakan "-100" (Basic Group)
+        // --- RETRY CHAIN STRATEGY ---
+        
+        // STEP 1: FIX CHAT ID PREFIX (If 'chat not found')
         if (errDesc.includes('chat not found')) {
-            console.log("[API Transporter] Retrying for 'chat not found'...");
+            console.log("[Retry] Fixing Prefix...");
             
             let retryId = actualChatId;
-            
-            // Logic Swap Prefix
             if (String(actualChatId).startsWith('-100')) {
-                // Remove -100 -> Try Basic
-                retryId = String(actualChatId).replace('-100', '-');
-                // Fix double minus if result is --
-                if (retryId.startsWith('--')) retryId = retryId.replace('--', '-');
+                 retryId = String(actualChatId).replace('-100', '-');
+                 if (retryId.startsWith('--')) retryId = retryId.replace('--', '-');
             } else if (String(actualChatId).startsWith('-')) {
-                // Add -100 -> Try Supergroup
-                // But avoid --100.
-                // Insert 100 after first -
-                retryId = '-100' + String(actualChatId).substring(1); 
+                 retryId = '-100' + String(actualChatId).substring(1); 
             } else {
-                // No minus? Add -100
                  retryId = '-100' + actualChatId;
             }
             
-            console.log(`[API Transporter] Retry ID: ${retryId}`);
+            // Try with Fixed ID
             body.chat_id = retryId;
+            console.log(`[Retry] New ID: ${retryId}`);
             
             const retryRes = await fetch(telegramUrl, {
                 method: 'POST',
@@ -116,26 +87,29 @@ export async function POST(request: Request) {
             const retryData = await retryRes.json();
             
             if (retryRes.ok) {
-                 console.log("[API Transporter] Retry Success!");
                  return NextResponse.json({ success: true, retried: true, note: 'Fixed Chat ID Prefix' });
-            } else {
-                 console.error("[API Transporter] Retry Failed:", retryData);
-            }
+            } 
+            
+            // If still failed, Update 'data' to the latest error so next block can check it
+            data = retryData; 
+            console.error("[Retry Failed]", retryData);
         }
+
+        // STEP 2: FIX THREAD (If 'thread not found' or still failing after prefix fix)
+        // Note: The previous block might have fixed the Chat ID but now we hit "thread not found" on the correct Chat ID.
+        // So we check data.description again (it might be updated from retryData)
         
-        // SCENARIO 2: "Message thread not found" (Topic Error)
-        if (errDesc.includes('thread not found') && messageThreadId) {
-             console.log("[API Transporter] Retrying without thread (Fall to General)...");
+        if ((data.description && data.description.includes('thread not found')) || (errDesc.includes('thread not found'))) {
+             console.log("[Retry] Dropping Thread ID (General Topic)...");
              delete body.message_thread_id;
-             // Reset chat ID to original attempt (or keep last modified? usually original)
-             // Let's stick to what we have in body.chat_id (which might be the fixed one from Scenario 1 if chained, but simple here)
              
-             const retryRes = await fetch(telegramUrl, {
+             // Ensure we use the best Chat ID we have (body.chat_id is already updated if Step 1 ran)
+             const retryRes2 = await fetch(telegramUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (retryRes.ok) {
+            if (retryRes2.ok) {
                 return NextResponse.json({ success: true, retried: true, note: 'Sent to General Topic' });
             }
         }
@@ -146,7 +120,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data });
 
   } catch (error: any) {
-    console.error("Telegram Proxy Fatal Error:", error);
+    console.error("Telegram Fatal Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
