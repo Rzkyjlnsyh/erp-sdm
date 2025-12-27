@@ -1,0 +1,15 @@
+name: Daily Recap Cron
+on:
+  schedule:
+    # Run every 30 minutes.
+    # Logic in API ensures it runs only ONCE per day after the target time.
+    - cron: "*/30 * * * *"
+  workflow_dispatch: # Enable manual run button
+
+jobs:
+  hit-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Daily Recap Endpoint
+        run: |
+          curl -I "${{ secrets.APP_URL }}/api/cron/daily-recap"
