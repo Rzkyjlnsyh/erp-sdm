@@ -11,5 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Call Daily Recap Endpoint
+        # Added --fail so curl exits with error code on 404/500
+        # Added --show-error to see why it failed
         run: |
-          curl -I "${{ secrets.APP_URL }}/api/cron/daily-recap"
+          echo "Hitting URL: ${{ secrets.APP_URL }}/api/cron/daily-recap"
+          curl --fail --show-error -I "${{ secrets.APP_URL }}/api/cron/daily-recap"
