@@ -15,7 +15,29 @@ export async function GET(request: Request) {
     
     // Check if configuration exists
     if (!settings.telegram_bot_token || !settings.telegram_owner_chat_id) {
-        return NextResponse.json({ error: 'Telegram settings missing' }, { status: 500 });
+        // EMERGENCY SELF-HEALING: Inject Token directly if missing
+        console.log("[Cron] Settings missing. Attempting self-healing injection...");
+        const HardToken = '6991930039:AAGq2NvJeM2OvgUjnz5Y5glpe0YrJVJer6w';
+        const HardChatId = '6524940813'; // Default to your personal ID temporary
+        
+        // Try Update
+        await pool.query(`UPDATE settings SET telegram_bot_token=$1, telegram_owner_chat_id=$2`, [HardToken, HardChatId]);
+        
+        // Try Insert if update affected 0 rows (table empty)
+        const check = await pool.query('SELECT * FROM settings LIMIT 1');
+        if (!check.rows.length) {
+             await pool.query(`INSERT INTO settings (telegram_bot_token, telegram_owner_chat_id) VALUES ($1, $2)`, [HardToken, HardChatId]);
+        }
+        
+        // Re-fetch
+        const reload = await pool.query('SELECT * FROM settings LIMIT 1');
+        if (reload.rows.length) {
+            settings.telegram_bot_token = reload.rows[0].telegram_bot_token;
+            settings.telegram_owner_chat_id = reload.rows[0].telegram_owner_chat_id;
+            console.log("[Cron] Self-healing success. Settings injected.");
+        } else {
+             return NextResponse.json({ error: 'Telegram settings missing (Self-healing failed)' }, { status: 500 });
+        }
     }
 
     const targetTime = settings.daily_recap_time || '18:00'; // HH:mm
