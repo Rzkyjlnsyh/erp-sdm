@@ -82,17 +82,27 @@ export async function GET(request: Request) {
     }
 
     if (targetModules.includes('attendance')) {
-       console.log(`[Cron] Querying attendance for date: ${dateStr}`);
-       // Robust query handling both boolean and smallint (0/1) for is_late
-       // Also ensures we count correct rows
+       console.log(`[Cron] Querying attendance for date: "${dateStr}" (Type: VARCHAR)`);
+       
+       // DEBUG: Check what dates actually exist in DB (Last 5 records)
+       const checkDates = await pool.query('SELECT date FROM attendance ORDER BY id DESC LIMIT 5');
+       console.log('[Cron DEBUG] Last 5 Attendance Dates in DB:', checkDates.rows.map(r=>r.date));
+
+       // Robust query
+       // Generate toDateString format (e.g. "Sat Dec 27 2025") to match Frontend behavior
+       const dateDateString = new Date(utc + (3600000 * 7)).toDateString(); 
+       console.log(`[Cron] Checking dates: ISO="${dateStr}" OR String="${dateDateString}"`);
+
        const resAtt = await pool.query(`
           SELECT 
              COUNT(*) FILTER (WHERE time_in IS NOT NULL) as present,
              COUNT(*) FILTER (WHERE CAST(is_late AS TEXT) = 'true' OR CAST(is_late AS TEXT) = '1') as late,
              COUNT(*)Total
           FROM attendance 
-          WHERE date = $1
-       `, [dateStr]);
+          WHERE 
+            date = $1 
+            OR date = $2
+       `, [dateStr, dateDateString]);
        
        console.log(`[Cron] Attendance Result:`, resAtt.rows[0]);
        const { present, late } = resAtt.rows[0];
@@ -128,23 +138,33 @@ export async function GET(request: Request) {
            FROM projects 
            GROUP BY status
         `);
-        const stats: any = {};
-        resProj.rows.forEach((r: any) => stats[r.status] = r.count);
         
         message += `📊 *STATUS PROYEK (KANBAN)*\n`;
-        message += `🔥 Doing: ${stats['DOING'] || 0}\n`;
-        message += `✅ Done: ${stats['DONE'] || 0}\n`;
-        message += `📋 Todo: ${stats['TODO'] || 0}\n\n`;
+        if (resProj.rows.length === 0) {
+            message += `_Belum ada proyek aktif._\n`;
+        } else {
+            // Dynamic Status Mapping & Loop
+            const statusMap: Record<string, string> = {
+                'TODO': '📋 Todo',
+                'DOING': '🔥 Doing',
+                'ON_GOING': '🚀 On Going',
+                'PREVIEW': '👀 Preview',
+                'DONE': '✅ Done'
+            };
+
+            resProj.rows.forEach((r: any) => {
+                const sKey = (r.status || '').toUpperCase();
+                const label = statusMap[sKey] || `🔹 ${sKey}`;
+                message += `${label}: ${r.count}\n`;
+            });
+        }
+        message += `\n`;
         hasContent = true;
     }
 
     if (!hasContent) message += "_Tidak ada modul laporan yang dipilih._";
 
-    // Use internal Smart Transporter (re-use the logic we just fixed!)
-    // Instead of raw fetch to telegram.org, we can call our own internal API helpers or just copy the logic.
-    // Copying logic is safer for Cron as it runs server-side locally.
-    
-    // --- SMART SEND LOGIC (COPIED FROM Transporter) ---
+    // Use internal Smart Transporter (Logic Copied from Transporter)
     const sendSmart = async (chatId: string, text: string) => {
         const token = settings.telegram_bot_token;
         let actualChatId = chatId;
@@ -158,8 +178,6 @@ export async function GET(request: Request) {
         
         let telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
         let body: any = { chat_id: actualChatId, text: text, parse_mode: 'Markdown' }; 
-        // Note: Markdown vs HTML. Original cron used Markdown. New transporter used HTML.
-        // Let's stick to Markdown for Cron as the message is formatted with *bold*.
         
         if (messageThreadId) body.message_thread_id = messageThreadId;
 
@@ -195,13 +213,13 @@ export async function GET(request: Request) {
                  const r2 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(currentBody)});
                  if (r2.ok) return { success: true };
                  
-                 // Enable Fallthrough: If r2 failed, update currentError to check if it's now a thread error
+                 // Fallthrough
                  const d2 = await r2.json();
                  currentError = d2.description || '';
                  console.log(`[Cron Retry] Prefix Fix Failed: ${currentError}`);
             }
             
-            // Retry Chain Step 2: Fix Thread (if 'thread not found' - either initially or after prefix fix)
+            // Retry Chain Step 2: Fix Thread (if 'thread not found')
             if (currentError.includes('thread not found')) {
                  console.log("[Cron Retry] Dropping Thread ID...");
                  delete currentBody.message_thread_id;
@@ -216,7 +234,6 @@ export async function GET(request: Request) {
 
     await sendSmart(settings.telegram_owner_chat_id, message);
 
-    // 6. LOG SUCCESS
     if (!isForce) {
         await pool.query(`
             INSERT INTO system_logs (id, timestamp, actor_id, actor_name, actor_role, action_type, details, target_obj)
