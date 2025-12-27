@@ -34,9 +34,13 @@ export const sendTelegramNotification = async (token: string, chatId: string, me
   if (!chatId) return;
 
   try {
+    const authToken = typeof window !== 'undefined' ? localStorage.getItem('sdm_erp_auth_token') : null;
     await fetch('/api/telegram', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+      },
       body: JSON.stringify({ chatId, message })
     });
   } catch (error) {

@@ -107,52 +107,66 @@ export const useStore = () => {
       }
 
       // 3. Bootstrap Data (only after auth is settled)
-      try {
-        const res = await fetch(`${API_BASE}/api/bootstrap`, { cache: 'no-store' }); // Ensure fresh data
-        if (!res.ok) throw new Error('Failed to load data from backend');
-        const data = await res.json();
-        
-        setState(prev => {
-          const newUsers = data.users || [];
-          let newCurrentUser = prev.currentUser;
-
-          // Sync currentUser with fresh data from bootstrap
-          if (prev.currentUser) {
-            const foundMe = newUsers.find((u: User) => u.id === prev.currentUser!.id);
-            if (foundMe) {
-                 newCurrentUser = { ...prev.currentUser, ...foundMe };
-                 // Update LocalStorage immediately
-                 try {
-                    if (typeof window !== 'undefined') {
-                        window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newCurrentUser));
-                    }
-                 } catch(e) {}
+      // 3. Bootstrap Data (only after auth is settled)
+      if (token) {
+        try {
+            const headers = { 'Authorization': `Bearer ${token}` };
+            const res = await fetch(`${API_BASE}/api/bootstrap`, { 
+                headers,
+                cache: 'no-store' 
+            }); // Ensure fresh data
+            
+            if (!res.ok) {
+                if (res.status === 401) {
+                    // Token expired or invalid
+                    logout();
+                    throw new Error("Session expired");
+                }
+                throw new Error('Failed to load data from backend');
             }
-          }
+            const data = await res.json();
+            
+            setState(prev => {
+            const newUsers = data.users || [];
+            let newCurrentUser = prev.currentUser;
 
-          return {
-            ...prev,
-            users: newUsers,
-            currentUser: newCurrentUser,
-            projects: data.projects || [],
-            attendance: data.attendance || [],
-            requests: data.requests || [],
-            transactions: data.transactions || [],
-            dailyReports: data.dailyReports || [],
-            salaryConfigs: data.salaryConfigs || [],
-            payrollRecords: data.payrollRecords || [],
-            logs: data.logs || [],
-            settings: data.settings || prev.settings,
-            financialAccounts: data.financialAccounts || [],
-            categories: initialCategories,
-            businessUnits: initialBusinessUnits
-          };
-        });
-      } catch (e) {
-        console.error("Bootstrap error:", e);
-      } finally {
-        setLoaded(true);
+            // Sync currentUser with fresh data from bootstrap
+            if (prev.currentUser) {
+                const foundMe = newUsers.find((u: User) => u.id === prev.currentUser!.id);
+                if (foundMe) {
+                    newCurrentUser = { ...prev.currentUser, ...foundMe };
+                    // Update LocalStorage immediately
+                    try {
+                        if (typeof window !== 'undefined') {
+                            window.localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newCurrentUser));
+                        }
+                    } catch(e) {}
+                }
+            }
+
+            return {
+                ...prev,
+                users: newUsers,
+                currentUser: newCurrentUser,
+                projects: data.projects || [],
+                attendance: data.attendance || [],
+                requests: data.requests || [],
+                transactions: data.transactions || [],
+                dailyReports: data.dailyReports || [],
+                salaryConfigs: data.salaryConfigs || [],
+                payrollRecords: data.payrollRecords || [],
+                logs: data.logs || [],
+                settings: data.settings || prev.settings,
+                financialAccounts: data.financialAccounts || [],
+                categories: initialCategories,
+                businessUnits: initialBusinessUnits
+            };
+            });
+        } catch (e) {
+            console.error("Bootstrap error:", e);
+        } 
       }
+      setLoaded(true);
     };
 
     initializeApp();
