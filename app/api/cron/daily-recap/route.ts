@@ -170,8 +170,11 @@ export async function GET(request: Request) {
             const data = await response.json();
             const errDesc = data.description || '';
             
-            // Retry 1: Prefix Fix
-            if (errDesc.includes('chat not found')) {
+            let currentError = errDesc;
+            let currentBody = { ...body };
+            
+            // Retry Chain Step 1: Fix Prefix (if 'chat not found')
+            if (currentError.includes('chat not found')) {
                  let retryId = actualChatId;
                  if (String(actualChatId).startsWith('-100')) {
                      retryId = String(actualChatId).replace('-100', '-');
@@ -181,19 +184,27 @@ export async function GET(request: Request) {
                  } else {
                      retryId = '-100' + actualChatId;
                  }
-                 body.chat_id = retryId;
-                 const r2 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+                 currentBody.chat_id = retryId;
+                 console.log(`[Cron Retry] Fixing Prefix to ${retryId}`);
+                 
+                 const r2 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(currentBody)});
                  if (r2.ok) return { success: true };
+                 
+                 // Enable Fallthrough: If r2 failed, update currentError to check if it's now a thread error
+                 const d2 = await r2.json();
+                 currentError = d2.description || '';
+                 console.log(`[Cron Retry] Prefix Fix Failed: ${currentError}`);
             }
             
-            // Retry 2: Thread Fix (Fall to General)
-            if (errDesc.includes('thread not found') || (data.description && data.description.includes('thread not found'))) {
-                 delete body.message_thread_id;
-                 const r3 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+            // Retry Chain Step 2: Fix Thread (if 'thread not found' - either initially or after prefix fix)
+            if (currentError.includes('thread not found')) {
+                 console.log("[Cron Retry] Dropping Thread ID...");
+                 delete currentBody.message_thread_id;
+                 const r3 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(currentBody)});
                  if (r3.ok) return { success: true };
             }
             
-            throw new Error(errDesc);
+            throw new Error(currentError);
         }
         return { success: true };
     };
