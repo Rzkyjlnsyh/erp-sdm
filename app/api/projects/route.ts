@@ -1,21 +1,29 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
-    await authorize(); // Auth check
+    await authorize(); 
     const p = await request.json();
     
-    await pool.query(
-      `INSERT INTO projects (id, title, description, collaborators_json, deadline, status, tasks_json, comments_json, is_management_only, priority, created_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [
-        p.id, p.title, p.description || '', JSON.stringify(p.collaborators || []),
-        p.deadline, p.status, JSON.stringify(p.tasks || []), JSON.stringify(p.comments || []),
-        p.isManagementOnly ? 1 : 0, p.priority, p.createdBy, p.createdAt
-      ]
-    );
+    await prisma.project.create({
+      data: {
+        id: p.id,
+        title: p.title,
+        description: p.description || '',
+        collaboratorsJson: JSON.stringify(p.collaborators || []),
+        deadline: p.deadline ? new Date(p.deadline) : null,
+        status: p.status,
+        tasksJson: JSON.stringify(p.tasks || []),
+        commentsJson: JSON.stringify(p.comments || []),
+        isManagementOnly: !!p.isManagementOnly,
+        priority: p.priority,
+        createdBy: p.createdBy,
+        createdAt: p.createdAt ? new Date(p.createdAt) : new Date()
+      }
+    });
+
     return NextResponse.json(p, { status: 201 });
   } catch (error) {
     console.error(error);

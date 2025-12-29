@@ -1,21 +1,26 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth';
 
-export async function PUT(request: Request, props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
+export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
     await authorize();
     const id = params.id;
     const a = await request.json();
 
-    await pool.query(
-      `UPDATE attendance SET time_in=$1, time_out=$2, is_late=$3, late_reason=$4, selfie_url=$5, checkout_selfie_url=$6, location_lat=$7, location_lng=$8 WHERE id=$9`,
-      [
-        a.timeIn, a.timeOut || null, a.isLate ? 1 : 0, a.lateReason || null,
-        a.selfieUrl, a.checkOutSelfieUrl || null, a.location.lat, a.location.lng, id
-      ]
-    );
+    await prisma.attendance.update({
+      where: { id },
+      data: {
+        timeIn: a.timeIn,
+        timeOut: a.timeOut || null,
+        isLate: !!a.isLate,
+        lateReason: a.lateReason || null,
+        selfieUrl: a.selfieUrl,
+        checkoutSelfieUrl: a.checkOutSelfieUrl || null,
+        locationLat: a.location.lat,
+        locationLng: a.location.lng
+      }
+    });
 
     return NextResponse.json(a);
   } catch (error) {

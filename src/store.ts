@@ -5,7 +5,8 @@ import { supabase } from './lib/supabaseClient';
 
 const isDev = process.env.NODE_ENV === 'development';
 // Changed to prefer relative path (Next.js internal API) even in dev to match Vercel environment
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || '';
+// Changed to prefer relative path (Next.js internal API) - FORCE INTERNAL API
+const API_BASE = ''; // Was: process.env.NEXT_PUBLIC_API_BASE || '';
 const CURRENT_USER_KEY = 'sdm_erp_current_user';
 const CURRENT_TOKEN_KEY = 'sdm_erp_auth_token';
 

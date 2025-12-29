@@ -1,0 +1,271 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// 1. User Model
+model User {
+  id               String  @id
+  name             String? @db.VarChar(100)
+  username         String? @unique @db.VarChar(50)
+  telegramId       String? @map("telegram_id") @db.VarChar(50)
+  telegramUsername String? @map("telegram_username") @db.VarChar(50)
+  role             String? @db.VarChar(20)
+  passwordHash     String? @map("password_hash")
+  deviceIds        Json?   @default("[]") @map("device_ids")
+  avatarUrl        String? @map("avatar_url")
+  jobTitle         String? @map("job_title") @db.VarChar(100)
+  bio              String?
+  isFreelance      Boolean? @default(false) @map("is_freelance")
+
+  // Relations
+  attendance      Attendance[]
+  requests        LeaveRequest[]
+  dailyReports    DailyReport[]
+  payrollRecords  PayrollRecord[]
+  salaryConfig    SalaryConfig?
+  chatMemberships ChatMember[]
+  sentMessages    ChatMessage[]
+
+  @@map("users")
+}
+
+// 2. Settings Model
+model Settings {
+  officeLat           Decimal? @map("office_lat")
+  officeLng           Decimal? @map("office_lng")
+  officeStartTime     String?  @map("office_start_time") @db.VarChar(10)
+  officeEndTime       String?  @map("office_end_time") @db.VarChar(10)
+  telegramBotToken    String?  @map("telegram_bot_token")
+  telegramGroupId     String?  @map("telegram_group_id")
+  telegramOwnerChatId String?  @map("telegram_owner_chat_id")
+  companyProfileJson  String?  @map("company_profile_json")
+  dailyRecapTime      String?  @default("18:00") @map("daily_recap_time") @db.VarChar(5)
+  dailyRecapContent   Json?    @default("[\"attendance\", \"finance\", \"projects\"]") @map("daily_recap_content")
+  
+  id Int @id @default(1) 
+
+  @@map("settings")
+}
+
+// 3. Projects Model
+model Project {
+  id               String    @id @db.VarChar(50)
+  title            String?   @db.VarChar(200)
+  description      String?
+  status           String?   @db.VarChar(20)
+  priority         String?   @db.VarChar(20)
+  deadline         DateTime? @db.Timestamp()
+  tasksJson        String?   @map("tasks_json")
+  collaboratorsJson String?  @map("collaborators_json")
+  commentsJson     String?   @map("comments_json")
+  isManagementOnly Boolean?  @default(false) @map("is_management_only")
+  createdBy        String?   @map("created_by") @db.VarChar(50)
+  createdAt        DateTime? @map("created_at") @db.Timestamptz()
+
+  @@map("projects")
+}
+
+// 4. Attendance Model
+model Attendance {
+  id                String  @id @db.VarChar(50)
+  userId            String? @map("user_id") @db.VarChar(50)
+  date              String? @db.VarChar(20)
+  timeIn            String? @map("time_in") @db.VarChar(10)
+  timeOut           String? @map("time_out") @db.VarChar(10)
+  isLate            Boolean? @map("is_late")
+  lateReason        String? @map("late_reason")
+  selfieUrl         String? @map("selfie_url")
+  checkoutSelfieUrl String? @map("checkout_selfie_url")
+  locationLat       Decimal? @map("location_lat")
+  locationLng       Decimal? @map("location_lng")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("attendance")
+}
+
+// 5. Leave Requests
+model LeaveRequest {
+  id            String    @id @db.VarChar(50)
+  userId        String?   @map("user_id") @db.VarChar(50)
+  type          String?   @db.VarChar(20)
+  description   String?
+  startDate     DateTime? @map("start_date") @db.Date
+  endDate       DateTime? @map("end_date") @db.Date
+  attachmentUrl String?   @map("attachment_url")
+  status        String?   @db.VarChar(20)
+  createdAt     DateTime? @map("created_at") @db.Timestamptz()
+  approverId    String?   @map("approver_id") @db.VarChar(50)
+  approverName  String?   @map("approver_name") @db.VarChar(100)
+  actionNote    String?   @map("action_note")
+  actionAt      DateTime? @map("action_at") @db.Timestamptz()
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("leave_requests")
+}
+
+// 6. Business Units
+model BusinessUnit {
+  id          String   @id @db.VarChar(50)
+  name        String   @db.VarChar(100)
+  description String?
+  isActive    Boolean? @default(true) @map("is_active")
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz()
+
+  transactions Transaction[]
+
+  @@map("business_units")
+}
+
+// 7. Transaction Categories
+model TransactionCategory {
+  id        String   @id @db.VarChar(50)
+  name      String   @db.VarChar(100)
+  type      String   @db.VarChar(10)
+  parentId  String?  @map("parent_id") @db.VarChar(50)
+  createdAt DateTime? @default(now()) @map("created_at") @db.Timestamptz()
+
+  parent   TransactionCategory?  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children TransactionCategory[] @relation("CategoryToCategory")
+
+  @@map("transaction_categories")
+}
+
+// 8. Financial Accounts
+model FinancialAccount {
+  id            String   @id @db.VarChar(50)
+  name          String   @db.VarChar(100)
+  bankName      String   @map("bank_name") @db.VarChar(100)
+  accountNumber String?  @map("account_number") @db.VarChar(100)
+  description   String?
+  isActive      Boolean? @default(true) @map("is_active")
+  createdAt     DateTime? @map("created_at") @db.Timestamptz()
+
+  @@map("financial_accounts")
+}
+
+// 9. Transactions
+model Transaction {
+  id             String   @id @db.VarChar(50)
+  date           DateTime? @db.Date
+  amount         Decimal?
+  type           String?  @db.VarChar(10)
+  category       String?  @db.VarChar(100)
+  description    String?
+  account        String?  @db.VarChar(100)
+  imageUrl       String?  @map("image_url")
+  businessUnitId String?  @map("business_unit_id") @db.VarChar(50)
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz()
+
+  businessUnit BusinessUnit? @relation(fields: [businessUnitId], references: [id])
+
+  @@index([businessUnitId], name: "idx_trans_biz_unit")
+  @@map("transactions")
+}
+
+// 10. Daily Reports
+model DailyReport {
+  id             String  @id @db.VarChar(50)
+  userId         String? @map("user_id") @db.VarChar(50)
+  date           String? @db.VarChar(20)
+  activitiesJson String? @map("activities_json")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("daily_reports")
+}
+
+// 11. Salary Configs
+model SalaryConfig {
+  userId        String   @id @map("user_id") @db.VarChar(50)
+  basicSalary   Decimal? @map("basic_salary")
+  allowance     Decimal?
+  mealAllowance Decimal? @map("meal_allowance")
+  lateDeduction Decimal? @map("late_deduction")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("salary_configs")
+}
+
+// 12. Payroll Records
+model PayrollRecord {
+  id                 String   @id @db.VarChar(50)
+  userId             String?  @map("user_id") @db.VarChar(50)
+  month              String?  @db.VarChar(10)
+  basicSalary        Decimal? @map("basic_salary")
+  allowance          Decimal?
+  totalMealAllowance Decimal? @map("total_meal_allowance")
+  bonus              Decimal?
+  deductions         Decimal?
+  netSalary          Decimal? @map("net_salary")
+  isSent             Boolean? @default(false) @map("is_sent")
+  processedAt        DateTime? @map("processed_at") @db.Timestamptz()
+  metadataJson       String?  @map("metadata_json")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("payroll_records")
+}
+
+// 13. System Logs
+model SystemLog {
+  id           String  @id @db.VarChar(50)
+  timestamp    DateTime @db.Timestamptz()
+  actorId      String? @map("actor_id") @db.VarChar(50)
+  actorName    String? @map("actor_name") @db.VarChar(100)
+  actorRole    String? @map("actor_role") @db.VarChar(20)
+  actionType   String? @map("action_type") @db.VarChar(50)
+  details      String?
+  targetObj    String? @map("target_obj") @db.VarChar(100)
+  metadataJson String? @map("metadata_json")
+
+  @@map("system_logs")
+}
+
+// 14. Chat Rooms
+model ChatRoom {
+  id        String   @id @db.VarChar(50)
+  name      String?  @db.VarChar(100)
+  type      String?  @db.VarChar(20)
+  createdBy String?  @map("created_by") @db.VarChar(50)
+  createdAt DateTime? @map("created_at") @db.Timestamptz()
+
+  members  ChatMember[]
+  messages ChatMessage[]
+
+  @@map("chat_rooms")
+}
+
+// Chat Members (Many-to-Many relation table)
+model ChatMember {
+  roomId   String @map("room_id") @db.VarChar(50)
+  userId   String @map("user_id") @db.VarChar(50)
+  joinedAt DateTime? @map("joined_at") @db.Timestamptz()
+
+  room ChatRoom @relation(fields: [roomId], references: [id])
+  user User     @relation(fields: [userId], references: [id])
+
+  @@id([roomId, userId])
+  @@map("chat_members")
+}
+
+model ChatMessage {
+  id            String  @id @db.VarChar(50)
+  roomId        String? @map("room_id") @db.VarChar(50)
+  senderId      String? @map("sender_id") @db.VarChar(50)
+  content       String?
+  attachmentUrl String? @map("attachment_url")
+  createdAt     DateTime? @map("created_at") @db.Timestamptz()
+  replyToId     String? @map("reply_to_id") @db.VarChar(50)
+
+  room   ChatRoom? @relation(fields: [roomId], references: [id])
+  sender User?     @relation(fields: [senderId], references: [id])
+
+  @@map("chat_messages")
+}

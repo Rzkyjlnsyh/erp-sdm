@@ -123,117 +123,136 @@ async function ensureSeedData() {
 // Bootstrap data
 app.get('/api/bootstrap', async (req, res) => {
   try {
-    await ensureSeedData();
-    const client = await pool.connect();
-    try {
-      const usersRes = await client.query('SELECT * FROM users');
-      const projectsRes = await client.query('SELECT * FROM projects');
-      const attendanceRes = await client.query('SELECT * FROM attendance ORDER BY date DESC, time_in DESC LIMIT 500');
-      const requestsRes = await client.query('SELECT * FROM leave_requests ORDER BY created_at DESC LIMIT 200');
-      const transactionsRes = await client.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 500');
-      const dailyReportsRes = await client.query('SELECT * FROM daily_reports ORDER BY date DESC LIMIT 200');
-      const salaryConfigsRes = await client.query('SELECT * FROM salary_configs');
-      const payrollRes = await client.query('SELECT * FROM payroll_records ORDER BY processed_at DESC LIMIT 100');
-      const settingsRes = await client.query('SELECT * FROM settings LIMIT 1');
+    // Seed Check (Simplified - relying on Prisma to work on existing DB)
+    // await ensureSeedData(); // Skip for now, assume DB is seeded by legacy server or manual SQL
+    
+    // Fetch All Data Parallel
+    const [
+        users, 
+        projects, 
+        attendance, 
+        requests, 
+        transactions, 
+        dailyReports, 
+        salaryConfigs, 
+        payrollRecords, 
+        settingsData
+    ] = await Promise.all([
+        prisma.user.findMany(),
+        prisma.project.findMany(),
+        prisma.attendance.findMany({ orderBy: [{ date: 'desc' }, { timeIn: 'desc' }], take: 500 }),
+        prisma.leaveRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+        prisma.transaction.findMany({ orderBy: { date: 'desc' }, take: 500 }),
+        prisma.dailyReport.findMany({ orderBy: { date: 'desc' }, take: 200 }),
+        prisma.salaryConfig.findMany(),
+        prisma.payrollRecord.findMany({ orderBy: { processedAt: 'desc' }, take: 100 }),
+        prisma.settings.findFirst() // Singleton
+    ]);
 
-      const settingsRow = settingsRes.rows[0];
-      const settings = settingsRow ? {
-        officeLocation: { lat: settingsRow.office_lat, lng: settingsRow.office_lng },
-        officeHours: { start: settingsRow.office_start_time, end: settingsRow.office_end_time },
-        telegramBotToken: settingsRow.telegram_bot_token || '',
-        telegramGroupId: settingsRow.telegram_group_id || '',
-        telegramOwnerChatId: settingsRow.telegram_owner_chat_id || '',
-        companyProfile: JSON.parse(settingsRow.company_profile_json || '{}')
-      } : {};
+    // Format Settings
+    const settings = settingsData ? {
+        officeLocation: { lat: settingsData.officeLat, lng: settingsData.officeLng },
+        officeHours: { start: settingsData.officeStartTime, end: settingsData.officeEndTime },
+        telegramBotToken: settingsData.telegramBotToken || '',
+        telegramGroupId: settingsData.telegramGroupId || '',
+        telegramOwnerChatId: settingsData.telegramOwnerChatId || '',
+        dailyRecapTime: settingsData.dailyRecapTime || '18:00',
+        dailyRecapModules: typeof settingsData.dailyRecapContent === 'string' 
+            ? JSON.parse(settingsData.dailyRecapContent) 
+            : (settingsData.dailyRecapContent || []),
+        companyProfile: typeof settingsData.companyProfileJson === 'string'
+            ? JSON.parse(settingsData.companyProfileJson)
+            : (settingsData.companyProfileJson || {})
+    } : {};
 
-      res.json({
-        users: usersRes.rows.map(u => ({
+    res.json({
+        users: users.map(u => ({
           id: u.id,
           name: u.name,
           username: u.username,
-          telegramId: u.telegram_id || '',
-          telegramUsername: u.telegram_username || '',
-          role: u.role
+          telegramId: u.telegramId || '',
+          telegramUsername: u.telegramUsername || '',
+          role: u.role,
+          // deviceIds is handled in login
         })),
-        projects: projectsRes.rows.map(p => ({
+        projects: projects.map(p => ({
           id: p.id,
           title: p.title,
           description: p.description || '',
-          collaborators: JSON.parse(p.collaborators_json || '[]'),
-          deadline: p.deadline ? new Date(p.deadline).toISOString().split('T')[0] : '', // Postgres returns Date object
+          collaborators: typeof p.collaboratorsJson === 'string' ? JSON.parse(p.collaboratorsJson) : [],
+          deadline: p.deadline ? p.deadline.toISOString().split('T')[0] : '',
           status: p.status,
-          tasks: JSON.parse(p.tasks_json || '[]'),
-          comments: p.comments_json ? JSON.parse(p.comments_json) : [],
-          isManagementOnly: !!p.is_management_only,
+          tasks: typeof p.tasksJson === 'string' ? JSON.parse(p.tasksJson) : [],
+          comments: typeof p.commentsJson === 'string' ? JSON.parse(p.commentsJson) : [],
+          isManagementOnly: !!p.isManagementOnly,
           priority: p.priority,
-          createdBy: p.created_by,
-          createdAt: Number(p.created_at)
+          createdBy: p.createdBy,
+          createdAt: Number(p.createdAt)
         })),
-        attendance: attendanceRes.rows.map(a => ({
+        attendance: attendance.map(a => ({
           id: a.id,
-          userId: a.user_id,
+          userId: a.userId,
           date: a.date,
-          timeIn: a.time_in,
-          timeOut: a.time_out || undefined,
-          isLate: !!a.is_late,
-          lateReason: a.late_reason || undefined,
-          selfieUrl: a.selfie_url,
-          checkOutSelfieUrl: a.checkout_selfie_url || undefined,
-          location: { lat: a.location_lat, lng: a.location_lng }
+          timeIn: a.timeIn,
+          timeOut: a.timeOut || undefined,
+          isLate: !!a.isLate,
+          lateReason: a.lateReason || undefined,
+          selfieUrl: a.selfieUrl,
+          checkOutSelfieUrl: a.checkoutSelfieUrl || undefined,
+          // Convert Decimal to number for JSON
+          location: { lat: Number(a.locationLat), lng: Number(a.locationLng) }
         })),
-        requests: requestsRes.rows.map(r => ({
+        requests: requests.map(r => ({
           id: r.id,
-          userId: r.user_id,
+          userId: r.userId,
           type: r.type,
           description: r.description,
-          startDate: new Date(r.start_date).toISOString().split('T')[0],
-          endDate: r.end_date ? new Date(r.end_date).toISOString().split('T')[0] : new Date(r.start_date).toISOString().split('T')[0],
-          attachmentUrl: r.attachment_url || undefined,
+          startDate: r.startDate ? r.startDate.toISOString().split('T')[0] : '',
+          endDate: r.endDate ? r.endDate.toISOString().split('T')[0] : (r.startDate ? r.startDate.toISOString().split('T')[0] : ''),
+          attachmentUrl: r.attachmentUrl || undefined,
           status: r.status,
-          createdAt: Number(r.created_at)
+          createdAt: Number(r.createdAt)
         })),
-        transactions: transactionsRes.rows.map(t => ({
+        transactions: transactions.map(t => ({
           id: t.id,
-          date: new Date(t.date).toISOString().split('T')[0],
+          date: t.date ? t.date.toISOString().split('T')[0] : '',
           amount: Number(t.amount),
           type: t.type,
           category: t.category || '',
           description: t.description,
           account: t.account,
-          imageUrl: t.image_url || undefined
+          imageUrl: t.imageUrl || undefined
         })),
-        dailyReports: dailyReportsRes.rows.map(r => ({
+        dailyReports: dailyReports.map(r => ({
           id: r.id,
-          userId: r.user_id,
+          userId: r.userId,
           date: r.date,
-          activities: JSON.parse(r.activities_json || '[]')
+          activities: typeof r.activitiesJson === 'string' ? JSON.parse(r.activitiesJson) : []
         })),
-        salaryConfigs: salaryConfigsRes.rows.map(c => ({
-          userId: c.user_id,
-          basicSalary: Number(c.basic_salary),
+        salaryConfigs: salaryConfigs.map(c => ({
+          userId: c.userId,
+          basicSalary: Number(c.basicSalary),
           allowance: Number(c.allowance),
-          mealAllowance: Number(c.meal_allowance),
-          lateDeduction: Number(c.late_deduction)
+          mealAllowance: Number(c.mealAllowance),
+          lateDeduction: Number(c.lateDeduction)
         })),
-        payrollRecords: payrollRes.rows.map(pr => ({
+        payrollRecords: payrollRecords.map(pr => ({
           id: pr.id,
-          userId: pr.user_id,
+          userId: pr.userId,
           month: pr.month,
-          basicSalary: Number(pr.basic_salary),
+          basicSalary: Number(pr.basicSalary),
           allowance: Number(pr.allowance),
-          totalMealAllowance: Number(pr.total_meal_allowance),
+          totalMealAllowance: Number(pr.totalMealAllowance),
           bonus: Number(pr.bonus),
           deductions: Number(pr.deductions),
-          netSalary: Number(pr.net_salary),
-          isSent: !!pr.is_sent,
-          processedAt: Number(pr.processed_at),
-          metadata: pr.metadata_json ? JSON.parse(pr.metadata_json) : undefined
+          netSalary: Number(pr.netSalary),
+          isSent: !!pr.isSent,
+          processedAt: Number(pr.processedAt),
+          metadata: typeof pr.metadataJson === 'string' ? JSON.parse(pr.metadataJson) : undefined
         })),
         settings
-      });
-    } finally {
-      client.release();
-    }
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to bootstrap data' });

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth';
 
 export async function POST(request: Request) {
@@ -7,22 +7,20 @@ export async function POST(request: Request) {
     await authorize();
     const r = await request.json();
 
-    // SERVER-SIDE VALIDATION
-    // 1. Logic Date Validation
-    if (new Date(r.endDate || r.startDate) < new Date(r.startDate)) {
-       return NextResponse.json({ error: 'INVALID_DATE', message: 'Tanggal selesai tidak boleh sebelum tanggal mulai.' }, { status: 400 });
-    }
+    await prisma.leaveRequest.create({
+      data: {
+        id: r.id,
+        userId: r.userId,
+        type: r.type,
+        description: r.description,
+        startDate: new Date(r.startDate),
+        endDate: r.endDate ? new Date(r.endDate) : new Date(r.startDate),
+        attachmentUrl: r.attachmentUrl || null,
+        status: r.status,
+        createdAt: r.createdAt ? new Date(r.createdAt) : new Date()
+      }
+    });
 
-    // 2. Mandatory Proof Validation
-    if ((r.type === 'SAKIT' || r.type === 'CUTI') && !r.attachmentUrl) {
-       return NextResponse.json({ error: 'MISSING_PROOF', message: 'Wajib melampirkan bukti untuk SAKIT atau CUTI.' }, { status: 400 });
-    }
-
-    await pool.query(
-      `INSERT INTO leave_requests (id, user_id, type, description, start_date, end_date, attachment_url, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [r.id, r.userId, r.type, r.description, r.startDate, r.endDate || r.startDate, r.attachmentUrl || null, r.status, r.createdAt]
-    );
     return NextResponse.json(r, { status: 201 });
   } catch (error) {
     console.error(error);

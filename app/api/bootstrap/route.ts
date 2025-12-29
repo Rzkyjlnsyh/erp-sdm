@@ -1,298 +1,166 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
-import bcrypt from 'bcryptjs';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-async function ensureSeedData() {
-  const client = await pool.connect();
-  try {
-    // Basic Settings
-    const resSettings = await client.query('SELECT * FROM settings LIMIT 1');
-    if (resSettings.rows.length === 0) {
-       const companyProfile = {
-        name: 'Sukses Digital Media',
-        address: 'Jl. Kemajuan No. 88, Jakarta Selatan',
-        phone: '0812-3456-7890',
-        logoUrl: '',
-        logoPosition: 'top',
-        textAlignment: 'center'
-      };
-      await client.query(
-        `INSERT INTO settings (office_lat, office_lng, office_start_time, office_end_time, telegram_bot_token, telegram_group_id, telegram_owner_chat_id, company_profile_json, daily_recap_time, daily_recap_content)
-         VALUES ($1, $2, $3, $4, '', '', '', $5, '18:00', '[]')`,
-        [-6.2, 106.816666, '08:00', '17:00', JSON.stringify(companyProfile)]
-      );
-    } else {
-       // Migration: Ensure new columns exist
-       await client.query(`
-         DO $$ 
-         BEGIN 
-           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='daily_recap_time') THEN
-             ALTER TABLE settings ADD COLUMN daily_recap_time VARCHAR(10) DEFAULT '18:00';
-           END IF;
-           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='settings' AND column_name='daily_recap_content') THEN
-             ALTER TABLE settings ADD COLUMN daily_recap_content JSONB DEFAULT '[]';
-           END IF;
-         END $$;
-       `);
-    }
-    
-    // Seed Users if empty
-    const resUsers = await client.query('SELECT count(*) FROM users');
-    if (parseInt(resUsers.rows[0].count) === 0) {
-       const defaultUsers = [
-          { id: '1', name: 'Budi Owner', username: 'owner', telegramId: '111', telegramUsername: '@budi_owner', role: 'OWNER', password: 'owner123' },
-          { id: '2', name: 'Siti Manager', username: 'manager', telegramId: '222', telegramUsername: '@siti_mgr', role: 'MANAGER', password: 'manager123' },
-          { id: '3', name: 'Andi Finance', username: 'finance', telegramId: '333', telegramUsername: '@andi_fin', role: 'FINANCE', password: 'finance123' },
-          { id: '4', name: 'Joko Staff', username: 'staff', telegramId: '444', telegramUsername: '@joko_sdm', role: 'STAFF', password: 'staff123' },
-          { id: '99', name: 'Super Dev', username: 'superadmin', telegramId: '000', telegramUsername: '@super_dev', role: 'SUPERADMIN', password: 'dev' }
-       ];
-       for (const u of defaultUsers) {
-          const hash = await bcrypt.hash(u.password, 10);
-          await client.query(
-            'INSERT INTO users (id, name, username, telegram_id, telegram_username, role, password_hash) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-            [u.id, u.name, u.username, u.telegramId, u.telegramUsername, u.role, hash]
-          );
-       }
-    }
-    
-    // Ensure Superadmin exists independently of other users
-    const resSuper = await client.query("SELECT id FROM users WHERE role = 'SUPERADMIN' LIMIT 1");
-    if (resSuper.rows.length === 0) {
-       const u = { id: '99', name: 'Super Dev', username: 'superadmin', telegramId: '000', telegramUsername: '@super_dev', role: 'SUPERADMIN', password: 'dev' };
-       const hash = await bcrypt.hash(u.password, 10);
-       await client.query(
-         'INSERT INTO users (id, name, username, telegram_id, telegram_username, role, password_hash) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-         [u.id, u.name, u.username, u.telegramId, u.telegramUsername, u.role, hash]
-       );
-    }
-
-    // Ensure system_logs table exists
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS system_logs (
-        id VARCHAR(50) PRIMARY KEY,
-        timestamp BIGINT NOT NULL,
-        actor_id VARCHAR(50),
-        actor_name VARCHAR(100),
-        actor_role VARCHAR(20),
-        action_type VARCHAR(50),
-        details TEXT,
-        target_obj VARCHAR(100),
-        metadata_json TEXT
-      )
-    `);
-
-    // Ensure device_ids column exists (Migration for Multi-Device)
-    await client.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='device_ids') THEN
-          ALTER TABLE users ADD COLUMN device_ids JSONB DEFAULT '[]';
-        END IF;
-      END $$;
-    `);
-
-    // Ensure CHAT tables exist
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS chat_rooms (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(100),
-        type VARCHAR(20),
-        created_by VARCHAR(50),
-        created_at BIGINT
-      );
-      CREATE TABLE IF NOT EXISTS chat_members (
-        room_id VARCHAR(50),
-        user_id VARCHAR(50),
-        joined_at BIGINT,
-        PRIMARY KEY (room_id, user_id)
-      );
-      CREATE TABLE IF NOT EXISTS chat_messages (
-        id VARCHAR(50) PRIMARY KEY,
-        room_id VARCHAR(50),
-        sender_id VARCHAR(50),
-        content TEXT,
-        attachment_url TEXT,
-        created_at BIGINT
-      );
-    `);
-
-    // Ensure Default 'General' Room
-    const resGeneral = await client.query("SELECT id FROM chat_rooms WHERE id = 'general'");
-    if (resGeneral.rows.length === 0) {
-      await client.query(
-        "INSERT INTO chat_rooms (id, name, type, created_by, created_at) VALUES ($1, $2, $3, $4, $5)",
-        ['general', 'General Forum', 'GROUP', 'system', Date.now()]
-      );
-      // Add all existing users to general
-      const allUsers = await client.query("SELECT id FROM users");
-      for (const u of allUsers.rows) {
-         await client.query(
-           "INSERT INTO chat_members (room_id, user_id, joined_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-           ['general', u.id, Date.now()]
-         );
-      }
-    }
-  } catch (e) {
-    console.error("Seed Check Failed", e);
-  } finally {
-    client.release();
-  }
-}
-
 export async function GET() {
   try {
-    await ensureSeedData(); // Ensure DB is ready
-    
-    const client = await pool.connect();
-    try {
-      const [
-        usersRes, projectsRes, attendanceRes, requestsRes, 
-        transactionsRes, dailyReportsRes, salaryConfigsRes, 
-        payrollRes, logsRes, settingsRes, financialAccountsRes
-      ] = await Promise.all([
-        client.query('SELECT * FROM users'),
-        client.query('SELECT * FROM projects'),
-        client.query('SELECT * FROM attendance ORDER BY date DESC, time_in DESC LIMIT 500'),
-        client.query('SELECT * FROM leave_requests ORDER BY created_at DESC LIMIT 200'),
-        client.query('SELECT * FROM transactions ORDER BY date DESC LIMIT 500'),
-        client.query('SELECT * FROM daily_reports ORDER BY date DESC LIMIT 200'),
-        client.query('SELECT * FROM salary_configs'),
-        client.query('SELECT * FROM payroll_records ORDER BY processed_at DESC LIMIT 100'),
-        client.query('SELECT * FROM system_logs ORDER BY timestamp DESC LIMIT 1000'),
-        client.query('SELECT * FROM settings LIMIT 1'),
-        client.query('SELECT * FROM financial_accounts WHERE is_active = true')
-      ]);
+    // Parallel Fetching for Performance
+    const [
+        users, 
+        projects, 
+        attendance, 
+        requests, 
+        transactions, 
+        dailyReports, 
+        salaryConfigs, 
+        payrollRecords, 
+        logs,
+        settingsData,
+        financialAccounts
+    ] = await Promise.all([
+        prisma.user.findMany(),
+        prisma.project.findMany(),
+        prisma.attendance.findMany({ orderBy: [{ date: 'desc' }, { timeIn: 'desc' }], take: 500 }),
+        prisma.leaveRequest.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+        prisma.transaction.findMany({ orderBy: { date: 'desc' }, take: 500 }),
+        prisma.dailyReport.findMany({ orderBy: { date: 'desc' }, take: 200 }),
+        prisma.salaryConfig.findMany(),
+        prisma.payrollRecord.findMany({ orderBy: { processedAt: 'desc' }, take: 100 }),
+        prisma.systemLog.findMany({ orderBy: { timestamp: 'desc' }, take: 1000 }),
+        prisma.settings.findFirst(),
+        prisma.financialAccount.findMany({ where: { isActive: true } })
+    ]);
 
-      const settingsRow = settingsRes.rows[0];
-      const settings = settingsRow ? {
-        officeLocation: { lat: settingsRow.office_lat, lng: settingsRow.office_lng },
-        officeHours: { start: settingsRow.office_start_time, end: settingsRow.office_end_time },
-        telegramBotToken: settingsRow.telegram_bot_token || '',
-        telegramGroupId: settingsRow.telegram_group_id || '',
-        telegramOwnerChatId: settingsRow.telegram_owner_chat_id || '',
-        dailyRecapTime: settingsRow.daily_recap_time || '18:00',
-        dailyRecapModules: typeof settingsRow.daily_recap_content === 'string' ? JSON.parse(settingsRow.daily_recap_content) : (settingsRow.daily_recap_content || []),
-        companyProfile: JSON.parse(settingsRow.company_profile_json || '{}')
-      } : {};
+    // Format Settings
+    const settings = settingsData ? {
+        officeLocation: { lat: Number(settingsData.officeLat), lng: Number(settingsData.officeLng) },
+        officeHours: { start: settingsData.officeStartTime, end: settingsData.officeEndTime },
+        telegramBotToken: settingsData.telegramBotToken || '',
+        telegramGroupId: settingsData.telegramGroupId || '',
+        telegramOwnerChatId: settingsData.telegramOwnerChatId || '',
+        dailyRecapTime: settingsData.dailyRecapTime || '18:00',
+        dailyRecapModules: typeof settingsData.dailyRecapContent === 'string' 
+            ? JSON.parse(settingsData.dailyRecapContent) 
+            : (settingsData.dailyRecapContent || []),
+        companyProfile: typeof settingsData.companyProfileJson === 'string'
+            ? JSON.parse(settingsData.companyProfileJson)
+            : (settingsData.companyProfileJson || {})
+    } : {};
 
-      const data = {
-        users: usersRes.rows.map(u => ({
+    const data = {
+        users: users.map(u => ({
           id: u.id,
           name: u.name,
           username: u.username,
-          telegramId: u.telegram_id || '',
-          telegramUsername: u.telegram_username || '',
+          telegramId: u.telegramId || '',
+          telegramUsername: u.telegramUsername || '',
           role: u.role,
-          deviceId: u.device_id || null,
-          deviceIds: u.device_ids || [],
-          avatarUrl: u.avatar_url || undefined,
-          jobTitle: u.job_title || undefined,
+          deviceId: typeof u.deviceIds === 'object' ? null : null, 
+          deviceIds: u.deviceIds || [],
+          avatarUrl: u.avatarUrl || undefined,
+          jobTitle: u.jobTitle || undefined,
           bio: u.bio || undefined,
-          isFreelance: !!u.is_freelance
+          isFreelance: !!u.isFreelance
         })),
-        projects: projectsRes.rows.map(p => ({
+        projects: projects.map(p => ({
           id: p.id,
           title: p.title,
           description: p.description || '',
-          collaborators: JSON.parse(p.collaborators_json || '[]'),
-          deadline: p.deadline ? new Date(p.deadline).toISOString().split('T')[0] : '', 
+          collaborators: typeof p.collaboratorsJson === 'string' ? JSON.parse(p.collaboratorsJson) : [],
+          deadline: p.deadline ? p.deadline.toISOString().split('T')[0] : '',
           status: p.status,
-          tasks: JSON.parse(p.tasks_json || '[]'),
-          comments: p.comments_json ? JSON.parse(p.comments_json) : [],
-          isManagementOnly: !!p.is_management_only,
+          tasks: typeof p.tasksJson === 'string' ? JSON.parse(p.tasksJson) : [],
+          comments: typeof p.commentsJson === 'string' ? JSON.parse(p.commentsJson) : [],
+          isManagementOnly: !!p.isManagementOnly,
           priority: p.priority,
-          createdBy: p.created_by,
-          createdAt: Number(p.created_at)
+          createdBy: p.createdBy,
+          createdAt: p.createdAt ? Number(p.createdAt) : Date.now()
         })),
-        attendance: attendanceRes.rows.map(a => ({
+        attendance: attendance.map(a => ({
           id: a.id,
-          userId: a.user_id,
+          userId: a.userId,
           date: a.date,
-          timeIn: a.time_in,
-          timeOut: a.time_out || undefined,
-          isLate: !!a.is_late,
-          lateReason: a.late_reason || undefined,
-          selfieUrl: a.selfie_url,
-          checkOutSelfieUrl: a.checkout_selfie_url || undefined,
-          location: { lat: a.location_lat, lng: a.location_lng }
+          timeIn: a.timeIn,
+          timeOut: a.timeOut || undefined,
+          isLate: !!a.isLate,
+          lateReason: a.lateReason || undefined,
+          selfieUrl: a.selfieUrl,
+          checkOutSelfieUrl: a.checkoutSelfieUrl || undefined,
+          location: { lat: Number(a.locationLat), lng: Number(a.locationLng) }
         })),
-        requests: requestsRes.rows.map(r => ({
+        requests: requests.map(r => ({
           id: r.id,
-          userId: r.user_id,
+          userId: r.userId,
           type: r.type,
           description: r.description,
-          startDate: new Date(r.start_date).toISOString().split('T')[0],
-          endDate: r.end_date ? new Date(r.end_date).toISOString().split('T')[0] : new Date(r.start_date).toISOString().split('T')[0],
-          attachmentUrl: r.attachment_url || undefined,
+          startDate: r.startDate ? r.startDate.toISOString().split('T')[0] : '',
+          endDate: r.endDate ? r.endDate.toISOString().split('T')[0] : (r.startDate ? r.startDate.toISOString().split('T')[0] : ''),
+          attachmentUrl: r.attachmentUrl || undefined,
           status: r.status,
-          createdAt: Number(r.created_at)
+          createdAt: r.createdAt ? Number(r.createdAt) : Date.now()
         })),
-        transactions: transactionsRes.rows.map(t => ({
+        transactions: transactions.map(t => ({
           id: t.id,
-          date: new Date(t.date).toISOString().split('T')[0],
+          date: t.date ? t.date.toISOString().split('T')[0] : '',
           amount: Number(t.amount),
           type: t.type,
           category: t.category || '',
           description: t.description,
           account: t.account,
-          imageUrl: t.image_url || undefined
+          imageUrl: t.imageUrl || undefined
         })),
-        dailyReports: dailyReportsRes.rows.map(r => ({
+        dailyReports: dailyReports.map(r => ({
           id: r.id,
-          userId: r.user_id,
+          userId: r.userId,
           date: r.date,
-          activities: JSON.parse(r.activities_json || '[]')
+          activities: typeof r.activitiesJson === 'string' ? JSON.parse(r.activitiesJson) : []
         })),
-        salaryConfigs: salaryConfigsRes.rows.map(c => ({
-          userId: c.user_id,
-          basicSalary: Number(c.basic_salary),
+        salaryConfigs: salaryConfigs.map(c => ({
+          userId: c.userId,
+          basicSalary: Number(c.basicSalary),
           allowance: Number(c.allowance),
-          mealAllowance: Number(c.meal_allowance),
-          lateDeduction: Number(c.late_deduction)
+          mealAllowance: Number(c.mealAllowance),
+          lateDeduction: Number(c.lateDeduction)
         })),
-        payrollRecords: payrollRes.rows.map(pr => ({
+        payrollRecords: payrollRecords.map(pr => ({
           id: pr.id,
-          userId: pr.user_id,
+          userId: pr.userId,
           month: pr.month,
-          basicSalary: Number(pr.basic_salary),
+          basicSalary: Number(pr.basicSalary),
           allowance: Number(pr.allowance),
-          totalMealAllowance: Number(pr.total_meal_allowance),
+          totalMealAllowance: Number(pr.totalMealAllowance),
           bonus: Number(pr.bonus),
           deductions: Number(pr.deductions),
-          netSalary: Number(pr.net_salary),
-          isSent: !!pr.is_sent,
-          processedAt: Number(pr.processed_at),
-          metadata: pr.metadata_json ? JSON.parse(pr.metadata_json) : undefined
+          netSalary: Number(pr.netSalary),
+          isSent: !!pr.isSent,
+          processedAt: pr.processedAt ? Number(pr.processedAt) : Date.now(),
+          metadata: typeof pr.metadataJson === 'string' ? JSON.parse(pr.metadataJson) : undefined
         })),
-        logs: logsRes.rows.map(l => ({
+        logs: logs.map(l => ({
           id: l.id,
           timestamp: Number(l.timestamp),
-          actorId: l.actor_id,
-          actorName: l.actor_name,
-          actorRole: l.actor_role,
-          actionType: l.action_type,
+          actorId: l.actorId,
+          actorName: l.actorName,
+          actorRole: l.actorRole,
+          actionType: l.actionType,
           details: l.details,
-          target: l.target_obj || undefined,
-          metadata: l.metadata_json ? JSON.parse(l.metadata_json) : undefined
+          target: l.targetObj || undefined,
+          metadata: l.metadataJson ? JSON.parse(l.metadataJson) : undefined
         })),
         settings,
-        financialAccounts: (financialAccountsRes || { rows: [] }).rows.map(a => ({
+        financialAccounts: financialAccounts.map(a => ({
           id: a.id,
           name: a.name,
-          bankName: a.bank_name,
-          accountNumber: a.account_number,
+          bankName: a.bankName,
+          accountNumber: a.accountNumber,
           description: a.description,
-          isActive: a.is_active
+          isActive: a.isActive
         }))
-      };
+    };
 
-      return NextResponse.json(data);
-    } finally {
-      client.release();
-    }
+    return NextResponse.json(data);
   } catch (err) {
     console.error('Bootstrap error', err);
     return NextResponse.json({ error: 'Failed to load initial data' }, { status: 500 });

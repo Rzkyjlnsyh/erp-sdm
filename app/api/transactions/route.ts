@@ -1,55 +1,42 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { authorize } from '@/lib/auth';
 
 export async function GET(request: Request) {
   try {
-    await authorize(['OWNER', 'FINANCE', 'MANAGER', 'STAFF']); // Who can view? Owner/Finance mainly. Staff/Manager dependent on policy. Giving access to all for now as it was public in store.
+    await authorize(['OWNER', 'FINANCE', 'MANAGER', 'STAFF']);
     
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 1000;
 
-    let query = `SELECT * FROM transactions`;
-    const params: any[] = [];
-    const conditions: string[] = [];
-
-    if (startDate) {
-      conditions.push(`date >= $${params.length + 1}`);
-      params.push(startDate);
-    }
+    const whereClause: any = {};
+    if (startDate) whereClause.date = { gte: new Date(startDate) };
     if (endDate) {
-      conditions.push(`date <= $${params.length + 1}`);
-      params.push(endDate);
+        whereClause.date = { 
+            ...whereClause.date,
+            lte: new Date(endDate) 
+        };
     }
 
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
-    }
-
-    query += ` ORDER BY date DESC, created_at DESC LIMIT $${params.length + 1}`;
-    params.push(limit);
-
-    const res = await pool.query(query, params);
+    const transactions = await prisma.transaction.findMany({
+        where: whereClause,
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        take: limit
+    });
     
-    // Camelcase mapping
-    const transactions = res.rows.map(t => ({
+    // Map to safe format (Date to String)
+    const safeTransactions = transactions.map(t => ({
         id: t.id,
-        date: t.date, // Note: pg 'date' might be returned as Date object or string. verify. Usually Date object in node-pg.
-        amount: parseFloat(t.amount),
+        date: t.date ? t.date.toISOString().split('T')[0] : '',
+        amount: Number(t.amount),
         type: t.type,
         category: t.category,
         description: t.description,
         account: t.account,
-        businessUnitId: t.business_unit_id,
-        imageUrl: t.image_url
-    }));
-
-    // Fix date format to string YYYY-MM-DD for frontend compatibility
-    const safeTransactions = transactions.map(t => ({
-        ...t,
-        date: new Date(t.date).toISOString().split('T')[0]
+        businessUnitId: t.businessUnitId,
+        imageUrl: t.imageUrl
     }));
 
     return NextResponse.json(safeTransactions);
@@ -63,11 +50,21 @@ export async function POST(request: Request) {
   try {
     await authorize(['OWNER', 'FINANCE']);
     const t = await request.json();
-    await pool.query(
-      `INSERT INTO transactions (id, date, amount, type, category, description, account, business_unit_id, image_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [t.id, t.date, t.amount, t.type, t.category || null, t.description, t.account, t.businessUnitId || null, t.imageUrl || null]
-    );
+
+    await prisma.transaction.create({
+      data: {
+        id: t.id,
+        date: new Date(t.date),
+        amount: t.amount,
+        type: t.type,
+        category: t.category || null,
+        description: t.description,
+        account: t.account,
+        businessUnitId: t.businessUnitId || null,
+        imageUrl: t.imageUrl || null
+      }
+    });
+
     return NextResponse.json(t, { status: 201 });
   } catch (error) {
     console.error(error);
