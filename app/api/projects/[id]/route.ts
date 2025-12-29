@@ -59,7 +59,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     } 
     else if (action === 'UPDATE_TASK') {
       // 2. Task Update (Atomic replacement of the specific task in JSON array)
-      const tasks = JSON.parse(currentProject.tasksJson || '[]');
+      let tasks: any[] = [];
+      try {
+        tasks = JSON.parse(currentProject.tasksJson || '[]');
+        if (!Array.isArray(tasks)) tasks = [];
+      } catch (e) { tasks = []; }
+      
       const updatedTasks = tasks.map((t: any) => t.id === data.taskId ? data.task : t);
       updateData.tasksJson = JSON.stringify(updatedTasks);
     }
@@ -88,7 +93,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 // Support DELETE if required by recent user requests
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    await authorize(['OWNER']); // Only Owner Delete
+    await authorize(['OWNER', 'MANAGER', 'FINANCE']); // Management Level Delete
     const id = params.id;
     await prisma.project.delete({ where: { id } });
     return NextResponse.json({ message: 'Deleted' });

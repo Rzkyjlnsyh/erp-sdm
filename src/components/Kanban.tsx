@@ -68,7 +68,11 @@ const Kanban: React.FC<KanbanProps> = ({ projects, users, currentUser, settings,
       const weight = { 'High': 3, 'Medium': 2, 'Low': 1 };
       processed.sort((a, b) => weight[b.priority] - weight[a.priority]);
     } else if (activeTab === 'deadline') {
-      processed.sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+      processed.sort((a, b) => {
+        if (!a.deadline) return 1; // No deadline -> Bottom
+        if (!b.deadline) return -1;
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      });
     }
 
     return processed;
@@ -288,19 +292,22 @@ const Kanban: React.FC<KanbanProps> = ({ projects, users, currentUser, settings,
                           <Edit2 size={16} />
                        </button>
                        {/* DELETE PROJECT BUTTON for ALL ROLES */}
-                       <button 
-                          onClick={(e) => { 
-                              e.stopPropagation(); 
-                              if (window.confirm(`Apakah Anda yakin ingin menghapus proyek "${project.title}"? Tindakan ini tidak dapat dibatalkan.`)) {
-                                  deleteProject(project.id);
-                                  toast.success('Proyek berhasil dihapus');
-                              }
-                          }} 
-                          className="p-2 rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
-                          title="Hapus Proyek"
-                       >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                       </button>
+                       {/* DELETE PROJECT BUTTON - MANAGEMENT LEVEL */}
+                       {[UserRole.OWNER, UserRole.MANAGER, UserRole.FINANCE].includes(currentUser.role) && (
+                         <button 
+                            onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (window.confirm(`Apakah Anda yakin ingin menghapus proyek "${project.title}"? Tindakan ini tidak dapat dibatalkan.`)) {
+                                    deleteProject(project.id);
+                                    toast.success('Proyek berhasil dihapus');
+                                }
+                            }} 
+                            className="p-2 rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                            title="Hapus Proyek"
+                         >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                         </button>
+                       )}
                     </div>
 
                     <div className="flex justify-between items-start mb-4 pr-16 bg-white">
