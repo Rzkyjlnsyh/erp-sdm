@@ -30,7 +30,7 @@ export async function GET() {
         prisma.payrollRecord.findMany({ orderBy: { processedAt: 'desc' }, take: 100 }),
         prisma.systemLog.findMany({ orderBy: { timestamp: 'desc' }, take: 1000 }),
         prisma.settings.findFirst(),
-        prisma.financialAccount.findMany({ where: { isActive: true } })
+        prisma.financialAccount.findMany({ where: { isActive: 1 as any } })
     ]);
 
     // Format Settings
