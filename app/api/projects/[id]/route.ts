@@ -34,6 +34,57 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   }
 }
 
+// Support PATCH for atomic updates (e.g., add comment, move status)
+export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  try {
+    const user = await authorize();
+    const id = params.id;
+    const body = await request.json(); // { action: '...', data: ... }
+    const { action, data } = body;
+
+    // Fetch current project first
+    const currentProject = await prisma.project.findUnique({ where: { id } });
+    if (!currentProject) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+
+    let updateData: any = {};
+
+    if (action === 'MOVE_STATUS') {
+      // 1. Status Update
+      if (data.status === 'DONE' && user.role === 'STAFF') {
+        return NextResponse.json({ error: 'Staff cannot mark as DONE' }, { status: 403 });
+      }
+      updateData.status = data.status;
+    } 
+    else if (action === 'UPDATE_TASK') {
+      // 2. Task Update (Atomic replacement of the specific task in JSON array)
+      const tasks = JSON.parse(currentProject.tasksJson || '[]');
+      const updatedTasks = tasks.map((t: any) => t.id === data.taskId ? data.task : t);
+      updateData.tasksJson = JSON.stringify(updatedTasks);
+    }
+    else if (action === 'ADD_COMMENT') {
+       // 3. Add Project Comment
+       const comments = JSON.parse(currentProject.commentsJson || '[]');
+       comments.push(data.comment);
+       updateData.commentsJson = JSON.stringify(comments);
+    }
+    // Fallback? If logic is complex, maybe just rely on standard PUT if 'data' is full object.
+    // But store.ts uses PATCH specifically for 'atomic' names. 
+    
+    // Perform Update
+    const updated = await prisma.project.update({
+      where: { id },
+      data: updateData
+    });
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    console.error("PATCH Error:", error);
+    return NextResponse.json({ error: 'Failed to patch project' }, { status: 500 });
+  }
+}
+
 // Support DELETE if required by recent user requests
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
