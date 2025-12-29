@@ -19,7 +19,7 @@ model User {
   avatarUrl        String? @map("avatar_url")
   jobTitle         String? @map("job_title") @db.VarChar(100)
   bio              String?
-  isFreelance      Boolean? @default(false) @map("is_freelance")
+  isFreelance      Int?    @default(0) @map("is_freelance") // 0=No, 1=Yes
 
   // Relations
   attendance      Attendance[]
@@ -62,7 +62,7 @@ model Project {
   tasksJson        String?   @map("tasks_json")
   collaboratorsJson String?  @map("collaborators_json")
   commentsJson     String?   @map("comments_json")
-  isManagementOnly Boolean?  @default(false) @map("is_management_only")
+  isManagementOnly Int?      @default(0) @map("is_management_only") // 0=No, 1=Yes
   createdBy        String?   @map("created_by") @db.VarChar(50)
   createdAt        DateTime? @map("created_at") @db.Timestamptz()
 
@@ -76,7 +76,7 @@ model Attendance {
   date              String? @db.VarChar(20)
   timeIn            String? @map("time_in") @db.VarChar(10)
   timeOut           String? @map("time_out") @db.VarChar(10)
-  isLate            Boolean? @map("is_late")
+  isLate            Int?    @map("is_late") // 0=No, 1=Yes
   lateReason        String? @map("late_reason")
   selfieUrl         String? @map("selfie_url")
   checkoutSelfieUrl String? @map("checkout_selfie_url")
@@ -114,7 +114,7 @@ model BusinessUnit {
   id          String   @id @db.VarChar(50)
   name        String   @db.VarChar(100)
   description String?
-  isActive    Boolean? @default(true) @map("is_active")
+  isActive    Int?     @default(1) @map("is_active") // 0=Inactive, 1=Active
   createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz()
 
   transactions Transaction[]
@@ -143,7 +143,7 @@ model FinancialAccount {
   bankName      String   @map("bank_name") @db.VarChar(100)
   accountNumber String?  @map("account_number") @db.VarChar(100)
   description   String?
-  isActive      Boolean? @default(true) @map("is_active")
+  isActive      Int?     @default(1) @map("is_active") // 0=Inactive, 1=Active
   createdAt     DateTime? @map("created_at") @db.Timestamptz()
 
   @@map("financial_accounts")
@@ -204,7 +204,7 @@ model PayrollRecord {
   bonus              Decimal?
   deductions         Decimal?
   netSalary          Decimal? @map("net_salary")
-  isSent             Boolean? @default(false) @map("is_sent")
+  isSent             Int?     @default(0) @map("is_sent") // 0=False, 1=True
   processedAt        DateTime? @map("processed_at") @db.Timestamptz()
   metadataJson       String?  @map("metadata_json")
 

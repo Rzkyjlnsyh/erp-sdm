@@ -13,7 +13,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       data: {
         timeIn: a.timeIn,
         timeOut: a.timeOut || null,
-        isLate: !!a.isLate,
+        isLate: (a.isLate ? 1 : 0) as any,
         lateReason: a.lateReason || null,
         selfieUrl: a.selfieUrl,
         checkoutSelfieUrl: a.checkOutSelfieUrl || null,

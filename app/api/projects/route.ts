@@ -17,10 +17,10 @@ export async function POST(request: Request) {
         status: p.status,
         tasksJson: JSON.stringify(p.tasks || []),
         commentsJson: JSON.stringify(p.comments || []),
-        isManagementOnly: !!p.isManagementOnly,
+        isManagementOnly: (p.isManagementOnly ? 1 : 0) as any,
         priority: p.priority,
         createdBy: p.createdBy,
-        createdAt: p.createdAt ? new Date(p.createdAt) : new Date()
+        createdAt: (p.createdAt ? new Date(p.createdAt) : new Date()) as any
       }
     });
 

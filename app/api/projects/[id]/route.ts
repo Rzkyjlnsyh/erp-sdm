@@ -22,7 +22,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         status: p.status,
         tasksJson: JSON.stringify(p.tasks || []),
         commentsJson: JSON.stringify(p.comments || []),
-        isManagementOnly: !!p.isManagementOnly,
+        isManagementOnly: (p.isManagementOnly ? 1 : 0) as any,
         priority: p.priority
       }
     });

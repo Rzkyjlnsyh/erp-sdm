@@ -156,7 +156,7 @@ export async function GET() {
           bankName: a.bankName,
           accountNumber: a.accountNumber,
           description: a.description,
-          isActive: a.isActive
+          isActive: !!a.isActive
         }))
     };
 

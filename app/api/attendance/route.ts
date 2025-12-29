@@ -14,7 +14,7 @@ export async function POST(request: Request) {
         date: a.date,
         timeIn: a.timeIn,
         timeOut: a.timeOut || null,
-        isLate: !!a.isLate,
+        isLate: (a.isLate ? 1 : 0) as any,
         lateReason: a.lateReason || null,
         selfieUrl: a.selfieUrl,
         checkoutSelfieUrl: a.checkOutSelfieUrl || null,

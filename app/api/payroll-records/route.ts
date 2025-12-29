@@ -21,8 +21,8 @@ export async function POST(request: Request) {
                 bonus: pr.bonus,
                 deductions: pr.deductions,
                 netSalary: pr.netSalary,
-                isSent: !!pr.isSent,
-                processedAt: pr.processedAt ? new Date(pr.processedAt) : new Date(),
+                isSent: (pr.isSent ? 1 : 0) as any,
+                processedAt: (pr.processedAt ? new Date(pr.processedAt) : new Date()) as any,
                 metadataJson: pr.metadata ? JSON.stringify(pr.metadata) : null
             }
         });
