@@ -29,17 +29,46 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [serverOffset, setServerOffset] = useState(0);
 
-  // AUTO-REFRESH DATE LOGIC (Fixes "Stale State" issue when tab is left open overnight)
+  // CLOCK SYNC: Fetch Server Time on Mount
   useEffect(() => {
-    const timer = setInterval(() => {
-        setCurrentDate(new Date());
-    }, 60000); // Check every minute
-    return () => clearInterval(timer);
+    const syncTime = async () => {
+       try {
+         // Using a lightweight endpoint to get server Date header
+         const start = Date.now();
+         const res = await fetch(`${settings.officeHours ? '' : ''}/api/chat/messages?roomId=ping`, { method: 'HEAD' });
+         const end = Date.now();
+         const latency = (end - start) / 2;
+         
+         const serverDateStr = res.headers.get('Date');
+         if (serverDateStr) {
+            const serverByHeader = new Date(serverDateStr).getTime();
+            const estimatedServerTime = serverByHeader + latency;
+            const offset = estimatedServerTime - Date.now();
+            setServerOffset(offset);
+            
+            // Initial tick
+            setCurrentDate(new Date(Date.now() + offset));
+         }
+       } catch (e) {
+         console.warn("Failed to sync server time, falling back to device time", e);
+       }
+    };
+    syncTime();
   }, []);
 
-  const todayStr = currentDate.toDateString();
-  const myAttendanceToday = attendanceLog.find(a => a.userId === currentUser.id && a.date === todayStr);
+  // AUTO-REFRESH DATE LOGIC (With Server Offset)
+  useEffect(() => {
+    const timer = setInterval(() => {
+        // Always add offset to current device time
+        setCurrentDate(new Date(Date.now() + serverOffset));
+    }, 1000); // Update every second for accurate clock
+    return () => clearInterval(timer);
+  }, [serverOffset]);
+
+  const todayStr = new Date(Date.now() + serverOffset).toDateString(); // Use server-aligned date for filtering
+  const myAttendanceToday = attendanceLog.find(a => a.userId === currentUser.id && a.date === todayStr); // This matches valid server date format "Wed Dec 27 2023"
 
   const handleStartCheckIn = () => {
     setIsCheckOut(false);
