@@ -22,7 +22,9 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
   const [isCheckOut, setIsCheckOut] = useState(false);
   const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
   const [isLate, setIsLate] = useState(false);
+  /* Removed duplicate lateReason */
   const [lateReason, setLateReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -140,12 +142,14 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
   }, [stage]);
 
   const capturePhoto = () => {
+    if (isSubmitting) return; // Prevent double submission
     if (canvasRef.current && videoRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
       
       if (ctx && video.videoWidth > 0) {
+        setIsSubmitting(true); // Lock UI
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         
@@ -161,27 +165,35 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
         }
 
         const submitAttendance = async (url: string) => {
-           if (isCheckOut && myAttendanceToday) {
-             onUpdateAttendance({
-               ...myAttendanceToday,
-               timeOut: new Date().toLocaleTimeString('id-ID'),
-               checkOutSelfieUrl: url
-             });
-           } else {
-             const record: Attendance = {
-               id: Math.random().toString(36).substr(2, 9),
-               userId: currentUser.id,
-               date: todayStr, // Uses the fresh auto-refreshed date
-               timeIn: new Date().toLocaleTimeString('id-ID'),
-               isLate,
-               lateReason: isLate ? lateReason : undefined,
-               selfieUrl: url,
-               location: location || { lat: 0, lng: 0 }
-             };
-             onAddAttendance(record);
+           try {
+             if (isCheckOut && myAttendanceToday) {
+               await onUpdateAttendance({
+                 ...myAttendanceToday,
+                 timeOut: new Date().toLocaleTimeString('id-ID'), // Note: Server should technically overwrite this
+                 checkOutSelfieUrl: url
+               });
+             } else {
+               const record: Attendance = {
+                 id: Math.random().toString(36).substr(2, 9),
+                 userId: currentUser.id,
+                 date: todayStr, 
+                 timeIn: new Date().toLocaleTimeString('id-ID'),
+                 isLate,
+                 lateReason: isLate ? lateReason : undefined,
+                 selfieUrl: url,
+                 location: location || { lat: 0, lng: 0 }
+               };
+               await onAddAttendance(record);
+             }
+             setStage('SUCCESS');
+             toast.success(isCheckOut ? 'Check-out berhasil! Selamat pulang.' : isLate ? 'Check-in berhasil! (Terlambat dicatat dengan alasan.)' : 'Check-in berhasil! Selamat bekerja.');
+           } catch (e) {
+             console.error(e);
+             toast.error("Gagal menyimpan data absensi. Silakan coba lagi.");
+             setStage('SELFIE'); // Return to selfie stage
+           } finally {
+             setIsSubmitting(false);
            }
-           setStage('SUCCESS');
-           toast.success(isCheckOut ? 'Check-out berhasil! Selamat pulang.' : isLate ? 'Check-in berhasil! (Terlambat dicatat dengan alasan.)' : 'Check-in berhasil! Selamat bekerja.');
         };
 
         if (uploadFile) {
@@ -194,9 +206,14 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
            const file = new File([blob], `selfie_${currentUser.username}_${Date.now()}.jpg`, { type: 'image/jpeg' });
            
            toast.info("Mengupload selfie...");
-           uploadFile(file).then(submitAttendance).catch(() => {
-              toast.error("Gagal upload selfie, menggunakan mode offline (local).");
-              submitAttendance(dataUrl); // Fallback
+           uploadFile(file)
+            .then(submitAttendance)
+            .catch((e) => {
+              console.error(e);
+              toast.error("Gagal upload foto (Koneksi bermasalah). Mohon cari sinyal yg lebih baik dan coba lagi.");
+              setIsSubmitting(false);
+              setStage('SELFIE');
+              // REMOVED UNSAFE FALLBACK TO PREVENT DATABASE BLOAT/CRASH
            });
         } else {
            submitAttendance(dataUrl);
@@ -337,10 +354,11 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
               </div>
               <button 
                 onClick={capturePhoto}
-                className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-3 shadow-xl shadow-blue-200 hover:bg-blue-700 transition"
+                disabled={isSubmitting}
+                className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-3 shadow-xl shadow-blue-200 hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Camera size={20} />
-                <span>AMBIL FOTO & SELESAIKAN {isCheckOut ? 'PULANG' : 'ABSENSI'}</span>
+                {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />}
+                <span>{isSubmitting ? 'MEMPROSES DATA...' : `AMBIL FOTO & SELESAIKAN ${isCheckOut ? 'PULANG' : 'ABSENSI'}`}</span>
               </button>
             </div>
           )}

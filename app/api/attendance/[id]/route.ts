@@ -8,17 +8,17 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const id = params.id;
     const a = await request.json();
 
+    // --- HARDENING: SERVER TIME ENFORCEMENT ---
+    const now = new Date();
+    const jakartaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
+    const serverTimeStr = jakartaTime.toLocaleTimeString('id-ID', { hour12: false, hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':');
+
     await prisma.attendance.update({
       where: { id },
       data: {
-        timeIn: a.timeIn,
-        timeOut: a.timeOut || null,
-        isLate: (a.isLate ? 1 : 0) as any,
-        lateReason: a.lateReason || null,
-        selfieUrl: a.selfieUrl,
-        checkoutSelfieUrl: a.checkOutSelfieUrl || null,
-        locationLat: a.location.lat,
-        locationLng: a.location.lng
+        // PREVENT TAMPERING: Only allow checkout fields
+        timeOut: serverTimeStr, // SERVER TIME
+        checkoutSelfieUrl: a.checkOutSelfieUrl
       }
     });
 
