@@ -7,6 +7,25 @@ export const revalidate = 0;
 
 export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const isForce = url.searchParams.get('force') === 'true';
+
+    // 1. Timezone Check (Jakarta)
+    const now = new Date();
+    const currentHHMM = now.toLocaleTimeString('id-ID', { 
+        timeZone: 'Asia/Jakarta', 
+        hour12: false, 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    }).replace(/\./g, ':');
+
+    const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    const yyyy = jakartaDate.getFullYear();
+    const mm = String(jakartaDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(jakartaDate.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    // 2. Get Settings
     const res = await pool.query('SELECT * FROM settings LIMIT 1');
     if (!res.rows.length) {
       return NextResponse.json({ error: 'Settings not initialized' }, { status: 400 });
@@ -18,28 +37,10 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: 'Telegram settings missing' }, { status: 500 });
     }
 
-    const targetTime = settings.daily_recap_time || '18:00'; // HH:mm
-    let targetModules: string[] = [];
-    try {
-        targetModules = typeof settings.daily_recap_content === 'string' 
-            ? JSON.parse(settings.daily_recap_content) 
-            : settings.daily_recap_content || [];
-    } catch (e) {
-        targetModules = [];
-    }
+    const targetTime = settings.daily_recap_time || '18:00';
     
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const wibDate = new Date(utc + (3600000 * 7));
-    const currentHHMM = wibDate.toISOString().slice(11, 16); 
-    const dateStr = wibDate.toISOString().split('T')[0]; 
-
-    const url = new URL(request.url);
-    const isForce = url.searchParams.get('force') === 'true';
-
-    console.log(`[Cron] Check. WIB: ${currentHHMM}, Target: ${targetTime}, Date: ${dateStr}`);
-
-    if (currentHHMM < targetTime && !isForce) {
+    // Time Check (Skip if Force)
+    if (!isForce && currentHHMM !== targetTime) {
          return NextResponse.json({ 
           skipped: true, 
           message: 'Too early. Waiting for scheduled time.', 
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
       });
     }
 
+    // 3. Deduplication (Skip if Force)
     if (!isForce) {
         const logCheck = await pool.query(`
             SELECT id FROM system_logs 
@@ -65,10 +67,20 @@ export async function GET(request: Request) {
         }
     }
 
+    // 4. Generate Content
+    let targetModules: string[] = [];
+    try {
+        targetModules = typeof settings.daily_recap_content === 'string' 
+            ? JSON.parse(settings.daily_recap_content) 
+            : settings.daily_recap_content || [];
+    } catch (e) { targetModules = []; }
+
     let message = `🔔 *LAPORAN HARIAN OWNER* 🔔\n📅 ${dateStr}\n\n`;
     let hasContent = false;
 
+    // Finance
     if (targetModules.includes('omset')) {
+       // Raw query for aggregation
        const resFin = await pool.query(`
           SELECT 
             COALESCE(SUM(amount) FILTER (WHERE type='IN'), 0) as income,
@@ -76,40 +88,32 @@ export async function GET(request: Request) {
           FROM transactions 
           WHERE date = CURRENT_DATE
        `);
+       // Note: PG pool returns strings/numbers usually.
        const { income, expense } = resFin.rows[0];
-       message += `💰 *KEUANGAN HARI INI*\n📥 Masuk: Rp ${Number(income).toLocaleString('id-ID')}\nBeban: Rp ${Number(expense).toLocaleString('id-ID')}\n💸 *Net: Rp ${Number(income - expense).toLocaleString('id-ID')}*\n\n`;
+       
+       message += `💰 *KEUANGAN HARI INI*\n📥 Masuk: Rp ${Number(income).toLocaleString('id-ID')}\nBeban: Rp ${Number(expense).toLocaleString('id-ID')}\n💸 *Net: Rp ${(Number(income) - Number(expense)).toLocaleString('id-ID')}*\n\n`;
        hasContent = true;
     }
 
+    // Attendance
     if (targetModules.includes('attendance')) {
-       console.log(`[Cron] Querying attendance for date: "${dateStr}" (Type: VARCHAR)`);
+       const dateDateString = jakartaDate.toDateString(); 
        
-       // DEBUG: Check what dates actually exist in DB (Last 5 records)
-       const checkDates = await pool.query('SELECT date FROM attendance ORDER BY id DESC LIMIT 5');
-       console.log('[Cron DEBUG] Last 5 Attendance Dates in DB:', checkDates.rows.map(r=>r.date));
-
-       // Robust query
-       // Generate toDateString format (e.g. "Sat Dec 27 2025") to match Frontend behavior
-       const dateDateString = new Date(utc + (3600000 * 7)).toDateString(); 
-       console.log(`[Cron] Checking dates: ISO="${dateStr}" OR String="${dateDateString}"`);
-
        const resAtt = await pool.query(`
           SELECT 
              COUNT(*) FILTER (WHERE time_in IS NOT NULL) as present,
-             COUNT(*) FILTER (WHERE CAST(is_late AS TEXT) = 'true' OR CAST(is_late AS TEXT) = '1') as late,
-             COUNT(*)Total
+             COUNT(*) FILTER (WHERE CAST(is_late AS TEXT) = 'true' OR CAST(is_late AS TEXT) = '1') as late
           FROM attendance 
-          WHERE 
-            date = $1 
-            OR date = $2
+          WHERE date = $1 OR date = $2
        `, [dateStr, dateDateString]);
        
-       console.log(`[Cron] Attendance Result:`, resAtt.rows[0]);
        const { present, late } = resAtt.rows[0];
+
        message += `👥 *ABSENSI KARYAWAN*\n✅ Hadir: ${present} orang\n⚠️ Terlambat: ${late} orang\n\n`;
        hasContent = true;
     }
 
+    // Requests
     if (targetModules.includes('requests')) {
         const resReq = await pool.query(`
            SELECT type, COUNT(*) as count 
@@ -132,108 +136,60 @@ export async function GET(request: Request) {
         hasContent = true;
     }
 
+    // Projects
     if (targetModules.includes('projects')) {
-        const resProj = await pool.query(`
-           SELECT status, COUNT(*) as count 
-           FROM projects 
-           GROUP BY status
-        `);
+        const resProj = await pool.query(`SELECT status, COUNT(*) as count FROM projects GROUP BY status`);
         
-        message += `📊 *STATUS PROYEK (KANBAN)*\n`;
+        message += `📊 *PROJECT STATUS*\n`;
+        const statusMap: Record<string, string> = {
+            'TODO': '📋 Todo',
+            'DOING': '🔥 Doing',
+            'ON_GOING': '🚀 On Going',
+            'PREVIEW': '👀 Preview',
+            'DONE': '✅ Done'
+        };
+        
         if (resProj.rows.length === 0) {
-            message += `_Belum ada proyek aktif._\n`;
+            message += `(Belum ada proyek aktif)\n`;
         } else {
-            // Dynamic Status Mapping & Loop
-            const statusMap: Record<string, string> = {
-                'TODO': '📋 Todo',
-                'DOING': '🔥 Doing',
-                'ON_GOING': '🚀 On Going',
-                'PREVIEW': '👀 Preview',
-                'DONE': '✅ Done'
-            };
-
             resProj.rows.forEach((r: any) => {
-                const sKey = (r.status || '').toUpperCase();
-                const label = statusMap[sKey] || `🔹 ${sKey}`;
+                const s = r.status || '';
+                const label = statusMap[s] || `🔹 ${s.replace(/_/g, ' ')}`;
                 message += `${label}: ${r.count}\n`;
             });
         }
-        message += `\n`;
         hasContent = true;
     }
 
     if (!hasContent) message += "_Tidak ada modul laporan yang dipilih._";
 
-    // Use internal Smart Transporter (Logic Copied from Transporter)
-    const sendSmart = async (chatId: string, text: string) => {
-        const token = settings.telegram_bot_token;
-        let actualChatId = chatId;
-        let messageThreadId: number | undefined = undefined;
+    // 5. Send Telegram
+    const telegramUrl = `https://api.telegram.org/bot${settings.telegram_bot_token}/sendMessage`;
+    let body: any = { chat_id: settings.telegram_owner_chat_id, text: message, parse_mode: 'Markdown' };
 
-        if (String(chatId).includes('_')) {
-            const parts = String(chatId).split('_');
-            actualChatId = parts[0]; 
-            if (!isNaN(Number(parts[1]))) messageThreadId = parseInt(parts[1]);
-        } 
-        
-        let telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
-        let body: any = { chat_id: actualChatId, text: text, parse_mode: 'Markdown' }; 
-        
-        if (messageThreadId) body.message_thread_id = messageThreadId;
+    let resp = await fetch(telegramUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
 
-        console.log(`[Cron Transporter] Sending to ${actualChatId} Thread ${messageThreadId}`);
-
-        let response = await fetch(telegramUrl, {
+    if (!resp.ok) {
+         // Auto Retry without Markdown
+         console.log('[Cron] Retry without Markdown...');
+         delete body.parse_mode;
+         resp = await fetch(telegramUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+            body: JSON.stringify(body)
         });
-        
-        if (!response.ok) {
-            const data = await response.json();
-            const errDesc = data.description || '';
-            
-            let currentError = errDesc;
-            let currentBody = { ...body };
-            
-            // Retry Chain Step 1: Fix Prefix (if 'chat not found')
-            if (currentError.includes('chat not found')) {
-                 let retryId = actualChatId;
-                 if (String(actualChatId).startsWith('-100')) {
-                     retryId = String(actualChatId).replace('-100', '-');
-                     if (retryId.startsWith('--')) retryId = retryId.replace('--', '-');
-                 } else if (String(actualChatId).startsWith('-')) {
-                     retryId = '-100' + String(actualChatId).substring(1); 
-                 } else {
-                     retryId = '-100' + actualChatId;
-                 }
-                 currentBody.chat_id = retryId;
-                 console.log(`[Cron Retry] Fixing Prefix to ${retryId}`);
-                 
-                 const r2 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(currentBody)});
-                 if (r2.ok) return { success: true };
-                 
-                 // Fallthrough
-                 const d2 = await r2.json();
-                 currentError = d2.description || '';
-                 console.log(`[Cron Retry] Prefix Fix Failed: ${currentError}`);
-            }
-            
-            // Retry Chain Step 2: Fix Thread (if 'thread not found')
-            if (currentError.includes('thread not found')) {
-                 console.log("[Cron Retry] Dropping Thread ID...");
-                 delete currentBody.message_thread_id;
-                 const r3 = await fetch(telegramUrl, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(currentBody)});
-                 if (r3.ok) return { success: true };
-            }
-            
-            throw new Error(currentError);
-        }
-        return { success: true };
-    };
+    }
 
-    await sendSmart(settings.telegram_owner_chat_id, message);
+    if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(`Telegram API Error: ${err.description}`);
+    }
 
+    // 6. Log if Not Force
     if (!isForce) {
         await pool.query(`
             INSERT INTO system_logs (id, timestamp, actor_id, actor_name, actor_role, action_type, details, target_obj)
@@ -241,10 +197,9 @@ export async function GET(request: Request) {
         `, [`log_${Date.now()}`, Date.now(), 'system', `Laporan Harian sent for ${dateStr}`]);
     }
 
-    return NextResponse.json({ success: true, recipient: settings.telegram_owner_chat_id, time: currentHHMM });
-
+    return NextResponse.json({ success: true, time: currentHHMM });
   } catch (error: any) {
-    console.error('[Cron] Error:', error);
+    console.error(error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

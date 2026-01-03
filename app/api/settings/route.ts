@@ -26,12 +26,14 @@ export async function PUT(request: Request) {
         data: {
             officeLat: s.officeLocation.lat,
             officeLng: s.officeLocation.lng,
-            officeStartTime: s.officeHours.start,
-            officeEndTime: s.officeHours.end,
+            officeStartTime: s.officeHours?.start,
+            officeEndTime: s.officeHours?.end,
             telegramBotToken: s.telegramBotToken || '',
             telegramGroupId: s.telegramGroupId || '',
             telegramOwnerChatId: s.telegramOwnerChatId || '',
-            companyProfileJson: JSON.stringify(s.companyProfile)
+            companyProfileJson: JSON.stringify(s.companyProfile),
+            dailyRecapTime: s.dailyRecapTime,
+            dailyRecapContent: JSON.stringify(s.dailyRecapModules)
         }
     });
 

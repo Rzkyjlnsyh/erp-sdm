@@ -127,6 +127,11 @@ app.get('/api/bootstrap', async (req, res) => {
     // await ensureSeedData(); // Skip for now, assume DB is seeded by legacy server or manual SQL
     
     // Fetch All Data Parallel
+    // Fetch Settings via Raw SQL to bypass Prisma Schema Caching issues
+    const settingsRes = await pool.query('SELECT * FROM settings LIMIT 1');
+    const settingsRow = settingsRes.rows[0];
+
+    // Fetch All Data Parallel
     const [
         users, 
         projects, 
@@ -135,8 +140,7 @@ app.get('/api/bootstrap', async (req, res) => {
         transactions, 
         dailyReports, 
         salaryConfigs, 
-        payrollRecords, 
-        settingsData
+        payrollRecords
     ] = await Promise.all([
         prisma.user.findMany(),
         prisma.project.findMany(),
@@ -145,24 +149,23 @@ app.get('/api/bootstrap', async (req, res) => {
         prisma.transaction.findMany({ orderBy: { date: 'desc' }, take: 500 }),
         prisma.dailyReport.findMany({ orderBy: { date: 'desc' }, take: 200 }),
         prisma.salaryConfig.findMany(),
-        prisma.payrollRecord.findMany({ orderBy: { processedAt: 'desc' }, take: 100 }),
-        prisma.settings.findFirst() // Singleton
+        prisma.payrollRecord.findMany({ orderBy: { processedAt: 'desc' }, take: 100 })
     ]);
 
-    // Format Settings
-    const settings = settingsData ? {
-        officeLocation: { lat: settingsData.officeLat, lng: settingsData.officeLng },
-        officeHours: { start: settingsData.officeStartTime, end: settingsData.officeEndTime },
-        telegramBotToken: settingsData.telegramBotToken || '',
-        telegramGroupId: settingsData.telegramGroupId || '',
-        telegramOwnerChatId: settingsData.telegramOwnerChatId || '',
-        dailyRecapTime: settingsData.dailyRecapTime || '18:00',
-        dailyRecapModules: typeof settingsData.dailyRecapContent === 'string' 
-            ? JSON.parse(settingsData.dailyRecapContent) 
-            : (settingsData.dailyRecapContent || []),
-        companyProfile: typeof settingsData.companyProfileJson === 'string'
-            ? JSON.parse(settingsData.companyProfileJson)
-            : (settingsData.companyProfileJson || {})
+    // Format Settings (Map from Snake Case)
+    const settings = settingsRow ? {
+        officeLocation: { lat: Number(settingsRow.office_lat), lng: Number(settingsRow.office_lng) },
+        officeHours: { start: settingsRow.office_start_time, end: settingsRow.office_end_time },
+        telegramBotToken: settingsRow.telegram_bot_token || '',
+        telegramGroupId: settingsRow.telegram_group_id || '',
+        telegramOwnerChatId: settingsRow.telegram_owner_chat_id || '',
+        dailyRecapTime: settingsRow.daily_recap_time || '18:00',
+        dailyRecapModules: typeof settingsRow.daily_recap_content === 'string' 
+            ? JSON.parse(settingsRow.daily_recap_content) 
+            : (settingsRow.daily_recap_content || []),
+        companyProfile: typeof settingsRow.company_profile_json === 'string'
+            ? JSON.parse(settingsRow.company_profile_json)
+            : (settingsRow.company_profile_json || {})
     } : {};
 
     res.json({
@@ -600,30 +603,44 @@ app.put('/api/settings', auth(['OWNER']), async (req, res) => {
 
 // For Vercel, we can export the app. Vercel automatically handles "api" directory files.
 // However, since we are doing a rewrite approach or stand-alone server approach, export default app is often safest for Vercel Node runtime.
-// --- DAILY RECAP SCHEDULER ---
-const startDailyRecapScheduler = () => {
-    console.log('[Scheduler] Daily Recap Service Started');
-    setInterval(async () => {
-        try {
-            const now = new Date();
-            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-            const wibDate = new Date(utc + (3600000 * 7));
-            const currentHHMM = wibDate.toISOString().slice(11, 16);
-            const dateStr = wibDate.toISOString().split('T')[0];
+// --- REUSABLE RECAP LOGIC ---
+const runDailyRecap = async (isManual = false) => {
+    try {
+        const now = new Date();
+        // Use Intl to get Jakarta time reliably regardless of server timezone
+        // Format: "14:02" (24h)
+        const currentHHMM = now.toLocaleTimeString('id-ID', { 
+            timeZone: 'Asia/Jakarta', 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        }).replace(/\./g, ':');
+        
+        // Format: "YYYY-MM-DD"
+        // We use 'sv-SE' (Sweden) locale which standards to YYYY-MM-DD, or manual formatting
+        // To ensure compatibility and simplicity with 'id-ID' time:
+        const jakartaDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const yyyy = jakartaDate.getFullYear();
+        const mm = String(jakartaDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(jakartaDate.getDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
 
-            // 1. Get Settings
-            const resSettings = await pool.query('SELECT * FROM settings LIMIT 1');
-            if (resSettings.rows.length === 0) return;
-            const settings = resSettings.rows[0];
+        // 1. Get Settings
+        const resSettings = await pool.query('SELECT * FROM settings LIMIT 1');
+        if (resSettings.rows.length === 0) return { skipped: true, reason: 'No Settings' };
+        const settings = resSettings.rows[0];
 
-            if (!settings.telegram_bot_token || !settings.telegram_owner_chat_id) return;
+        if (!settings.telegram_bot_token || !settings.telegram_owner_chat_id) return { skipped: true, reason: 'No Token' };
 
-            const targetTime = settings.daily_recap_time || '18:00';
-            
-            // Check Time (Exact Minute Match to avoid drift issues, or check ">= and not sent")
-            if (currentHHMM !== targetTime) return;
+        const targetTime = settings.daily_recap_time || '18:00';
+        
+        // Check Time (Exact Minute Match to avoid drift issues, or check ">= and not sent")
+        // IF MANUAL, SKIP TIME CHECK
+        if (!isManual && currentHHMM !== targetTime) return { skipped: true, reason: 'Not Time Yet' };
 
-            // 2. Check Deduplication
+        // 2. Check Deduplication
+        // IF MANUAL, SKIP LOG CHECK
+        if (!isManual) {
             const logCheck = await pool.query(`
                 SELECT id FROM system_logs 
                 WHERE action_type = 'DAILY_RECAP_AUTO' 
@@ -632,114 +649,157 @@ const startDailyRecapScheduler = () => {
             `, [`%${dateStr}%`]);
 
             if (logCheck.rows.length > 0) {
-                 console.log(`[Scheduler] Recap for ${dateStr} already sent.`);
-                 return; 
+                    console.log(`[Scheduler] Recap for ${dateStr} already sent.`);
+                    return { skipped: true, reason: 'Already Sent' }; 
+            }
+        }
+
+        console.log(`[Scheduler] Generating Daily Recap for ${dateStr}... (Manual: ${isManual})`);
+
+        // 3. Generate Content
+        let targetModules = [];
+        try {
+            targetModules = typeof settings.daily_recap_content === 'string' 
+                ? JSON.parse(settings.daily_recap_content) 
+                : settings.daily_recap_content || [];
+        } catch (e) { list = []; }
+
+        let message = `🔔 *LAPORAN HARIAN OWNER* 🔔\n📅 ${dateStr}\n\n`;
+        let hasContent = false;
+
+        // Finance
+        if (targetModules.includes('omset')) {
+            const resFin = await pool.query(`
+                SELECT 
+                COALESCE(SUM(amount) FILTER (WHERE type='IN'), 0) as income,
+                COALESCE(SUM(amount) FILTER (WHERE type='OUT'), 0) as expense
+                FROM transactions 
+                WHERE date = CURRENT_DATE
+            `);
+            const { income, expense } = resFin.rows[0];
+            message += `💰 *KEUANGAN HARI INI*\n📥 Masuk: Rp ${Number(income).toLocaleString('id-ID')}\nBeban: Rp ${Number(expense).toLocaleString('id-ID')}\n💸 *Net: Rp ${Number(income - expense).toLocaleString('id-ID')}*\n\n`;
+            hasContent = true;
+        }
+
+        // Attendance
+        if (targetModules.includes('attendance')) {
+            // Use Query for today
+            const resAtt = await pool.query(`
+                SELECT 
+                    COUNT(*) FILTER (WHERE time_in IS NOT NULL) as present,
+                    COUNT(*) FILTER (WHERE is_late = 1) as late
+                FROM attendance 
+                WHERE date = $1
+            `, [new Date().toDateString()]); // Using device date string usually stored in DB
+            
+            // Fallback if DB uses ISO string
+            if (resAtt.rows[0].present == 0) {
+                // Try ISO check just in case
+                // Not implementing complex double-check to keep it fast, relying on standard format
             }
 
-            console.log(`[Scheduler] Generating Daily Recap for ${dateStr}...`);
+            const { present, late } = resAtt.rows[0] || { present: 0, late: 0 };
+            message += `👥 *ABSENSI KARYAWAN*\n✅ Hadir: ${present} orang\n⚠️ Terlambat: ${late} orang\n\n`;
+            hasContent = true;
+        }
 
-            // 3. Generate Content
-            let targetModules = [];
-            try {
-                targetModules = typeof settings.daily_recap_content === 'string' 
-                    ? JSON.parse(settings.daily_recap_content) 
-                    : settings.daily_recap_content || [];
-            } catch (e) { list = []; }
-
-            let message = `🔔 *LAPORAN HARIAN OWNER* 🔔\n📅 ${dateStr}\n\n`;
-            let hasContent = false;
-
-            // Finance
-            if (targetModules.includes('omset')) {
-               const resFin = await pool.query(`
-                  SELECT 
-                    COALESCE(SUM(amount) FILTER (WHERE type='IN'), 0) as income,
-                    COALESCE(SUM(amount) FILTER (WHERE type='OUT'), 0) as expense
-                  FROM transactions 
-                  WHERE date = CURRENT_DATE
-               `);
-               const { income, expense } = resFin.rows[0];
-               message += `💰 *KEUANGAN HARI INI*\n📥 Masuk: Rp ${Number(income).toLocaleString('id-ID')}\nBeban: Rp ${Number(expense).toLocaleString('id-ID')}\n💸 *Net: Rp ${Number(income - expense).toLocaleString('id-ID')}*\n\n`;
-               hasContent = true;
+        // Requests
+        if (targetModules.includes('requests')) {
+            const resReq = await pool.query(`SELECT type, COUNT(*) as count FROM leave_requests WHERE status = 'PENDING' GROUP BY type`);
+            const pendingTotal = resReq.rows.reduce((acc, curr) => acc + Number(curr.count), 0);
+            if (pendingTotal > 0) {
+                message += `📩 *PENDING REQUESTS*: ${pendingTotal}\n`;
+            } else {
+                message += `📩 *REQUESTS*: All Clear\n`;
             }
+            hasContent = true;
+            message += '\n';
+        }
+        
+        // Projects
+        if (targetModules.includes('projects')) {
+                const resProj = await pool.query(`SELECT status, COUNT(*) as count FROM projects GROUP BY status`);
+                message += `📊 *PROJECT STATUS*\n`;
+                
+                const statusMap = {
+                'TODO': '📋 Todo',
+                'DOING': '🔥 Doing',
+                'ON_GOING': '🚀 On Going',
+                'PREVIEW': '👀 Preview',
+                'DONE': '✅ Done'
+                };
 
-            // Attendance
-            if (targetModules.includes('attendance')) {
-               // Use Query for today
-               const resAtt = await pool.query(`
-                  SELECT 
-                     COUNT(*) FILTER (WHERE time_in IS NOT NULL) as present,
-                     COUNT(*) FILTER (WHERE is_late = 1) as late
-                  FROM attendance 
-                  WHERE date = $1
-               `, [new Date().toDateString()]); // Using device date string usually stored in DB
-               
-               // Fallback if DB uses ISO string
-               if (resAtt.rows[0].present == 0) {
-                   // Try ISO check just in case
-                   // Not implementing complex double-check to keep it fast, relying on standard format
-               }
-
-               const { present, late } = resAtt.rows[0] || { present: 0, late: 0 };
-               message += `👥 *ABSENSI KARYAWAN*\n✅ Hadir: ${present} orang\n⚠️ Terlambat: ${late} orang\n\n`;
-               hasContent = true;
-            }
-
-            // Requests
-            if (targetModules.includes('requests')) {
-                const resReq = await pool.query(`SELECT type, COUNT(*) as count FROM leave_requests WHERE status = 'PENDING' GROUP BY type`);
-                const pendingTotal = resReq.rows.reduce((acc, curr) => acc + Number(curr.count), 0);
-                if (pendingTotal > 0) {
-                   message += `📩 *PENDING REQUESTS*: ${pendingTotal}\n`;
-                } else {
-                   message += `📩 *REQUESTS*: All Clear\n`;
-                }
+                resProj.rows.forEach(r => {
+                    const cleanStatus = statusMap[r.status] || `🔹 ${r.status.replace(/_/g, ' ')}`; // Remove underscores to prevent Markdown errors
+                    message += `${cleanStatus}: ${r.count}\n`;
+                });
+                if (resProj.rows.length === 0) message += `(No active projects)\n`;
                 hasContent = true;
-                message += '\n';
-            }
+        }
+
+        if (!hasContent) message += "_Tidak ada data laporan yang dipilih._";
+
+        // 4. Send Telegram with formatting
+        const telegramUrl = `https://api.telegram.org/bot${settings.telegram_bot_token}/sendMessage`;
+        let body = { chat_id: settings.telegram_owner_chat_id, text: message, parse_mode: 'Markdown' };
+
+        // Fetch Polyfill/Check
+        const fetchFn = global.fetch || require('node-fetch');
+        
+        let resp = await fetchFn(telegramUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        if (!resp.ok) {
+            // Retry without Markdown if formatting failed (Error 400)
+            const errData = await resp.json();
+            console.error(`[Scheduler] Telegram Failed (Attempt 1): ${errData.description}`);
             
-            // Projects
-            if (targetModules.includes('projects')) {
-                 const resProj = await pool.query(`SELECT status, COUNT(*) as count FROM projects GROUP BY status`);
-                 message += `📊 *PROJECT STATUS*\n`;
-                 resProj.rows.forEach(r => {
-                     message += `- ${r.status}: ${r.count}\n`;
-                 });
-                 if (resProj.rows.length === 0) message += `(No active projects)\n`;
-                 hasContent = true;
+            if (resp.status === 400) {
+                    console.log('[Scheduler] Retrying without Markdown...');
+                    delete body.parse_mode;
+                    resp = await fetchFn(telegramUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
             }
+        }
 
-            if (!hasContent) message += "_Tidak ada data laporan yang dipilih._";
-
-            // 4. Send Telegram
-            const telegramUrl = `https://api.telegram.org/bot${settings.telegram_bot_token}/sendMessage`;
-            let body = { chat_id: settings.telegram_owner_chat_id, text: message, parse_mode: 'Markdown' };
-
-            // Fetch Polyfill/Check
-            const fetchFn = global.fetch || require('node-fetch'); // Assuming Node 18 or 'node-fetch' available. If not, this might fail. 
-            // Since this is a custom server, and user has 'npm run dev', likely Node 18+.
-            
-            const resp = await fetchFn(telegramUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-
-            if (resp.ok) {
-                console.log(`[Scheduler] Recap sent to ${settings.telegram_owner_chat_id}`);
-                // 5. Log Success
+        if (resp.ok) {
+            console.log(`[Scheduler] Recap sent to ${settings.telegram_owner_chat_id}`);
+            // 5. Log Success
+            if (!isManual) {
                 await pool.query(`
                     INSERT INTO system_logs (id, timestamp, actor_id, actor_name, actor_role, action_type, details, target_obj)
                     VALUES ($1, $2, 'system', 'SYSTEM CRON', 'SYSTEM', 'DAILY_RECAP_AUTO', $3, 'Telegram')
                 `, [`log_cron_${Date.now()}`, Date.now(), `Laporan Harian sent for ${dateStr}`]);
-            } else {
-                console.error(`[Scheduler] Telegram Failed: ${resp.status}`);
             }
-
-        } catch (e) {
-            console.error('[Scheduler] Error:', e);
+            return { success: true };
+        } else {
+            const finalErr = await resp.json().catch(() => ({ description: 'Unknown' }));
+            console.error(`[Scheduler] Telegram Failed Final: ${finalErr.description}`);
+            return { success: false, error: finalErr.description };
         }
-    }, 60000); // Check every minute
+
+    } catch (e) {
+        console.error('[Scheduler] Error:', e);
+        return { success: false, error: e.message };
+    }
+};
+
+// MANUAL TRIGGER ENDPOINT
+app.post('/api/trigger-scheduler', async (req, res) => {
+    const result = await runDailyRecap(true);
+    res.json(result);
+});
+
+// --- DAILY RECAP SCHEDULER ---
+const startDailyRecapScheduler = () => {
+    console.log('[Scheduler] Daily Recap Service Started');
+    setInterval(() => runDailyRecap(false), 60000); // Check every minute
 };
 
 if (process.env.NODE_ENV !== 'production') {
