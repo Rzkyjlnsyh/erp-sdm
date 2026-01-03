@@ -22,22 +22,53 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
   const [isCheckOut, setIsCheckOut] = useState(false);
   const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
   const [isLate, setIsLate] = useState(false);
+  /* Removed duplicate lateReason */
   const [lateReason, setLateReason] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [serverOffset, setServerOffset] = useState(0);
 
-  // AUTO-REFRESH DATE LOGIC (Fixes "Stale State" issue when tab is left open overnight)
+  // CLOCK SYNC: Fetch Server Time on Mount
   useEffect(() => {
-    const timer = setInterval(() => {
-        setCurrentDate(new Date());
-    }, 60000); // Check every minute
-    return () => clearInterval(timer);
+    const syncTime = async () => {
+       try {
+         // Using a lightweight endpoint to get server Date header
+         const start = Date.now();
+         const res = await fetch(`${settings.officeHours ? '' : ''}/api/chat/messages?roomId=ping`, { method: 'HEAD' });
+         const end = Date.now();
+         const latency = (end - start) / 2;
+         
+         const serverDateStr = res.headers.get('Date');
+         if (serverDateStr) {
+            const serverByHeader = new Date(serverDateStr).getTime();
+            const estimatedServerTime = serverByHeader + latency;
+            const offset = estimatedServerTime - Date.now();
+            setServerOffset(offset);
+            
+            // Initial tick
+            setCurrentDate(new Date(Date.now() + offset));
+         }
+       } catch (e) {
+         console.warn("Failed to sync server time, falling back to device time", e);
+       }
+    };
+    syncTime();
   }, []);
 
-  const todayStr = currentDate.toDateString();
-  const myAttendanceToday = attendanceLog.find(a => a.userId === currentUser.id && a.date === todayStr);
+  // AUTO-REFRESH DATE LOGIC (With Server Offset)
+  useEffect(() => {
+    const timer = setInterval(() => {
+        // Always add offset to current device time
+        setCurrentDate(new Date(Date.now() + serverOffset));
+    }, 1000); // Update every second for accurate clock
+    return () => clearInterval(timer);
+  }, [serverOffset]);
+
+  const todayStr = new Date(Date.now() + serverOffset).toDateString(); // Use server-aligned date for filtering
+  const myAttendanceToday = attendanceLog.find(a => a.userId === currentUser.id && a.date === todayStr); // This matches valid server date format "Wed Dec 27 2023"
 
   const handleStartCheckIn = () => {
     setIsCheckOut(false);
@@ -140,12 +171,14 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
   }, [stage]);
 
   const capturePhoto = () => {
+    if (isSubmitting) return; // Prevent double submission
     if (canvasRef.current && videoRef.current) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
       
       if (ctx && video.videoWidth > 0) {
+        setIsSubmitting(true); // Lock UI
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         
@@ -161,27 +194,35 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
         }
 
         const submitAttendance = async (url: string) => {
-           if (isCheckOut && myAttendanceToday) {
-             onUpdateAttendance({
-               ...myAttendanceToday,
-               timeOut: new Date().toLocaleTimeString('id-ID'),
-               checkOutSelfieUrl: url
-             });
-           } else {
-             const record: Attendance = {
-               id: Math.random().toString(36).substr(2, 9),
-               userId: currentUser.id,
-               date: todayStr, // Uses the fresh auto-refreshed date
-               timeIn: new Date().toLocaleTimeString('id-ID'),
-               isLate,
-               lateReason: isLate ? lateReason : undefined,
-               selfieUrl: url,
-               location: location || { lat: 0, lng: 0 }
-             };
-             onAddAttendance(record);
+           try {
+             if (isCheckOut && myAttendanceToday) {
+               await onUpdateAttendance({
+                 ...myAttendanceToday,
+                 timeOut: new Date().toLocaleTimeString('id-ID'), // Note: Server should technically overwrite this
+                 checkOutSelfieUrl: url
+               });
+             } else {
+               const record: Attendance = {
+                 id: Math.random().toString(36).substr(2, 9),
+                 userId: currentUser.id,
+                 date: todayStr, 
+                 timeIn: new Date().toLocaleTimeString('id-ID'),
+                 isLate,
+                 lateReason: isLate ? lateReason : undefined,
+                 selfieUrl: url,
+                 location: location || { lat: 0, lng: 0 }
+               };
+               await onAddAttendance(record);
+             }
+             setStage('SUCCESS');
+             toast.success(isCheckOut ? 'Check-out berhasil! Selamat pulang.' : isLate ? 'Check-in berhasil! (Terlambat dicatat dengan alasan.)' : 'Check-in berhasil! Selamat bekerja.');
+           } catch (e) {
+             console.error(e);
+             toast.error("Gagal menyimpan data absensi. Silakan coba lagi.");
+             setStage('SELFIE'); // Return to selfie stage
+           } finally {
+             setIsSubmitting(false);
            }
-           setStage('SUCCESS');
-           toast.success(isCheckOut ? 'Check-out berhasil! Selamat pulang.' : isLate ? 'Check-in berhasil! (Terlambat dicatat dengan alasan.)' : 'Check-in berhasil! Selamat bekerja.');
         };
 
         if (uploadFile) {
@@ -194,9 +235,14 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
            const file = new File([blob], `selfie_${currentUser.username}_${Date.now()}.jpg`, { type: 'image/jpeg' });
            
            toast.info("Mengupload selfie...");
-           uploadFile(file).then(submitAttendance).catch(() => {
-              toast.error("Gagal upload selfie, menggunakan mode offline (local).");
-              submitAttendance(dataUrl); // Fallback
+           uploadFile(file)
+            .then(submitAttendance)
+            .catch((e) => {
+              console.error(e);
+              toast.error("Gagal upload foto (Koneksi bermasalah). Mohon cari sinyal yg lebih baik dan coba lagi.");
+              setIsSubmitting(false);
+              setStage('SELFIE');
+              // REMOVED UNSAFE FALLBACK TO PREVENT DATABASE BLOAT/CRASH
            });
         } else {
            submitAttendance(dataUrl);
@@ -337,10 +383,11 @@ const AttendanceModule: React.FC<AttendanceProps> = ({ currentUser, settings, at
               </div>
               <button 
                 onClick={capturePhoto}
-                className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-3 shadow-xl shadow-blue-200 hover:bg-blue-700 transition"
+                disabled={isSubmitting}
+                className="w-full bg-blue-600 text-white py-6 rounded-[2rem] font-black text-xs uppercase tracking-widest flex items-center justify-center space-x-3 shadow-xl shadow-blue-200 hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Camera size={20} />
-                <span>AMBIL FOTO & SELESAIKAN {isCheckOut ? 'PULANG' : 'ABSENSI'}</span>
+                {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : <Camera size={20} />}
+                <span>{isSubmitting ? 'MEMPROSES DATA...' : `AMBIL FOTO & SELESAIKAN ${isCheckOut ? 'PULANG' : 'ABSENSI'}`}</span>
               </button>
             </div>
           )}
