@@ -51,6 +51,19 @@ export const AppSettings = ({ store, toast }: any) => {
     }
   }, [mapActive, officeLoc]);
 
+  // Sync with Store when it updates (e.g. after Bootstrap finishes)
+  useEffect(() => {
+    if (store.settings) {
+       setBotToken(store.settings.telegramBotToken || '');
+       setGroupId(store.settings.telegramGroupId || '');
+       setOwnerChatId(store.settings.telegramOwnerChatId || '');
+       setOfficeLoc(store.settings.officeLocation || { lat: -6.2, lng: 106.816666 });
+       setCompanyProfile(store.settings.companyProfile || {});
+       setRecapTime(store.settings.dailyRecapTime || '18:00');
+       setRecapModules(store.settings.dailyRecapModules || []);
+    }
+  }, [store.settings]);
+
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -80,36 +93,30 @@ export const AppSettings = ({ store, toast }: any) => {
     }
   };
 
+  const [isTesting, setIsTesting] = useState(false);
+
   const handleTestCron = async () => {
+    setIsTesting(true);
     try {
-      toast.loading("Mengecek jadwal server...");
-      // Anti-cache param
-      const res = await fetch(`/api/cron/daily-recap?v=${Date.now()}`); 
+      // Anti-cache param + Force mode (so it doesn't block real schedule)
+      const res = await fetch(`/api/cron/daily-recap?force=true&v=${Date.now()}`); 
       const data = await res.json();
       
+      if (!res.ok) {
+          throw new Error(data.error || 'Server responded with an error');
+      }
+
       if (data.skipped) {
-        toast((t: any) => (
-           <div className="flex items-start gap-2">
-             <div className="text-amber-500"><Clock size={16}/></div>
-             <div>
-               <p className="font-bold text-xs uppercase">LOGIKA JADWAL BERJALAN</p>
-               <p className="text-[10px] text-slate-500 mt-1">
-                 Server Time: <b className="text-slate-800">{data.serverTimeWIB}</b><br/>
-                 Target Setting: <b className="text-slate-800">{data.targetTime}</b>
-               </p>
-               <p className="text-[9px] text-slate-400 mt-1 italic">
-                 "Belum waktunya dikirim (Aman)."
-               </p>
-             </div>
-           </div>
-        ), { duration: 5000 });
+        toast.info(`LOGIKA BERJALAN: Server Time ${data.serverTimeWIB} vs Target ${data.targetTime}. (Belum waktunya - Aman)`);
       } else if (data.success) {
         toast.success("✅ JADWAL COCOK! Notifikasi dikirim ke Telegram.");
       } else {
         toast.error("Terjadi kesalahan sistem: " + JSON.stringify(data));
       }
-    } catch (e) {
-      toast.error("Gagal menghubungi server");
+    } catch (e: any) {
+      toast.error(`Gagal menghubungui server: ${e?.message || e}`);
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -340,9 +347,10 @@ export const AppSettings = ({ store, toast }: any) => {
              </div>
              <button 
                onClick={handleTestCron}
-               className="w-full md:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 font-black text-[10px] uppercase rounded-2xl hover:border-amber-500 hover:text-amber-600 hover:shadow-lg transition flex-shrink-0"
+               disabled={isTesting}
+               className="w-full md:w-auto px-8 py-4 bg-white border-2 border-slate-200 text-slate-700 font-black text-[10px] uppercase rounded-2xl hover:border-amber-500 hover:text-amber-600 hover:shadow-lg transition flex-shrink-0 disabled:opacity-50"
              >
-               TES LOGIKA SKEDULER SEKARANG
+               {isTesting ? 'MENGECEK JADWAL...' : 'TES LOGIKA SKEDULER SEKARANG'}
              </button>
           </div>
        </div>

@@ -43,8 +43,8 @@ model Settings {
   telegramGroupId     String?  @map("telegram_group_id")
   telegramOwnerChatId String?  @map("telegram_owner_chat_id")
   companyProfileJson  String?  @map("company_profile_json")
-  dailyRecapTime      String?  @default("18:00") @map("daily_recap_time") @db.VarChar(5)
-  dailyRecapContent   Json?    @default("[\"attendance\", \"finance\", \"projects\"]") @map("daily_recap_content")
+  dailyRecapTime      String?  @default("18:00") @map("daily_recap_time") @db.VarChar(10)
+  dailyRecapContent   String?  @default("[]") @map("daily_recap_content")
   
   id Int @id @default(1) 
 

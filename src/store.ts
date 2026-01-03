@@ -480,6 +480,7 @@ export const useStore = () => {
       addLog(SystemActionType.SETTINGS_UPDATE, 'Updated application settings', 'Settings');
     } catch (e) {
       console.error(e);
+      throw e; // Propagate error so UI knows it failed
     }
   };
 
